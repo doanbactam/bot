@@ -18,6 +18,16 @@ npm run package
 npm run verify
 ```
 
+On Linux x64, package changes should also pass:
+
+```sh
+npm run package:linux
+```
+
+The Linux package reuses the checksum-pinned shipped renderer and stages
+linux-x64 native modules (see the README's Linux packaging section); macOS-only
+features intentionally degrade to unavailable there.
+
 Use focused commits. Explain whether a change affects reviewed runtime source,
 the editable frontend, the checksum-pinned packaged renderer, or packaging only.
 Do not weaken checksum, bundle identity, code-signing, or clean-export checks to

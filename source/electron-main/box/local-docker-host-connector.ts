@@ -14,7 +14,7 @@ export const LOCAL_DOCKER_BOX_IMAGE = "public.ecr.aws/k0i0n2g5/cursorenvironment
 export const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
 export const LOCAL_DOCKER_GATEWAY_URL = "http://127.0.0.1:1340";
 export const LOCAL_DOCKER_OWNER_LABEL = "com.grok-bot.local-vm=1";
-export const LOCAL_DOCKER_SCHEMA_VERSION = "6";
+export const LOCAL_DOCKER_SCHEMA_VERSION = "7";
 const READY_TIMEOUT_MS = 180_000;
 const OPTIONAL_CREDENTIAL_TIMEOUT_MS = 3_000;
 
@@ -162,6 +162,34 @@ async function localAuthMountArguments(): Promise<string[]> {
   return mounts;
 }
 
+async function pullBoxImage(image: string): Promise<void> {
+  const present = await runDocker(["image", "inspect", "--format", "{{.Id}}", image]);
+  if (present.ok) return;
+  const pulled = await runDocker(["pull", "--platform", "linux/amd64", image]);
+  if (!pulled.ok) throw new Error(`Could not download the local VM image (${image}). Check the network connection and Docker registry access.\n${pulled.output}`);
+}
+
+export function buildDockerRunArguments(args: { readonly token: string; readonly hostBundle: LocalHostBundle; readonly inferenceCredential?: InferenceCredential | undefined; readonly inferenceFile?: string | undefined; readonly authMounts: readonly string[] }): string[] {
+  return [
+    "run", "--detach", "--name", LOCAL_DOCKER_BOX_CONTAINER,
+    "--label", LOCAL_DOCKER_OWNER_LABEL, "--label", `com.grok-bot.local-vm.host-sha256=${args.hostBundle.sha256}`,
+    "--label", `com.grok-bot.local-vm.box-exec-daemon-sha256=${args.hostBundle.boxExecDaemonSha256}`,
+    "--label", `com.grok-bot.local-vm.inference-credential=${args.inferenceCredential == null ? "0" : "1"}`,
+    "--label", `com.grok-bot.local-vm.schema-version=${LOCAL_DOCKER_SCHEMA_VERSION}`,
+    "--platform", "linux/amd64", "--restart", "unless-stopped", "--shm-size", "1g",
+    "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${args.token}`,
+    ...(args.inferenceCredential == null ? [] : ["--env", "SAND_DEV_INFERENCE_TOKEN_FILE=/run/grok-bot/inference.json", "--env", `SAND_BACKEND_URL=${args.inferenceCredential.backendUrl}`]),
+    "--publish", "127.0.0.1:1337:1337", "--publish", "127.0.0.1:1339:1339", "--publish", "127.0.0.1:1340:1340",
+    "--publish", "127.0.0.1:6080:6080", "--publish", "127.0.0.1:6081:6081", "--publish", "127.0.0.1:8790:8790",
+    "--volume", "grok-bot-local-vm-workspace:/workspace", "--volume", "grok-bot-local-vm-data:/home/box/sand-data",
+    "--mount", `type=bind,src=${args.hostBundle.path},dst=/home/box/sand-host/host-main.cjs,readonly`,
+    "--mount", `type=bind,src=${dirname(args.hostBundle.boxExecDaemonPath)},dst=/home/box/box-exec-daemon,readonly`,
+    ...(args.inferenceFile == null ? [] : ["--mount", `type=bind,src=${dirname(args.inferenceFile)},dst=/run/grok-bot,readonly`]),
+    ...args.authMounts,
+    LOCAL_DOCKER_BOX_IMAGE,
+  ];
+}
+
 async function ensureLocalDockerBox(settingsPath: string, inferenceCredential?: InferenceCredential): Promise<GatewayConnection> {
   const token = await readOrCreateToken(settingsPath);
   const hostBundle = await stageCurrentHostBundle(settingsPath);
@@ -171,35 +199,32 @@ async function ensureLocalDockerBox(settingsPath: string, inferenceCredential?: 
   const inspected = await inspectContainer();
   if (inspected.exists && !inspected.owned) throw new Error(`Local Docker VM cannot use ${LOCAL_DOCKER_BOX_CONTAINER}: an unowned container already has that name.`);
   if (inspected.exists && inspected.image !== LOCAL_DOCKER_BOX_IMAGE) throw new Error(`Local Docker VM container uses unexpected image ${inspected.image}. Remove it explicitly before changing images.`);
-  if (inspected.exists && (inspected.schemaVersion !== LOCAL_DOCKER_SCHEMA_VERSION || inspected.hostSha256 !== hostBundle.sha256 || (inferenceCredential != null && !inspected.hasInferenceCredential))) {
+  const replaceReasons = inspected.exists
+    ? [
+      ...(inspected.schemaVersion !== LOCAL_DOCKER_SCHEMA_VERSION ? ["outdated schema"] : []),
+      ...(inspected.hostSha256 !== hostBundle.sha256 ? ["updated app runtime"] : []),
+      ...(inferenceCredential != null && !inspected.hasInferenceCredential ? ["new inference credentials"] : []),
+    ]
+    : [];
+  let current = inspected;
+  if (replaceReasons.length > 0) {
     const removed = await runDocker(["rm", "--force", LOCAL_DOCKER_BOX_CONTAINER]);
     if (!removed.ok) throw new Error(`Could not replace the local VM with the current app runtime: ${removed.output}`);
+    current = await inspectContainer();
   }
-  const shouldReplace = inspected.exists && (inspected.schemaVersion !== LOCAL_DOCKER_SCHEMA_VERSION || inspected.hostSha256 !== hostBundle.sha256 || (inferenceCredential != null && !inspected.hasInferenceCredential));
-  const current = shouldReplace ? await inspectContainer() : inspected;
   if (current.exists && !current.running) {
     const started = await runDocker(["start", LOCAL_DOCKER_BOX_CONTAINER]);
     if (!started.ok) throw new Error(`Could not start the local Docker VM: ${started.output}`);
   } else if (!current.exists) {
+    await pullBoxImage(LOCAL_DOCKER_BOX_IMAGE);
     const authMounts = await localAuthMountArguments();
-    const created = await runDocker([
-      "run", "--detach", "--name", LOCAL_DOCKER_BOX_CONTAINER,
-      "--label", LOCAL_DOCKER_OWNER_LABEL, "--label", `com.grok-bot.local-vm.host-sha256=${hostBundle.sha256}`,
-      "--label", `com.grok-bot.local-vm.box-exec-daemon-sha256=${hostBundle.boxExecDaemonSha256}`,
-      "--label", `com.grok-bot.local-vm.inference-credential=${inferenceCredential == null ? "0" : "1"}`,
-      "--label", `com.grok-bot.local-vm.schema-version=${LOCAL_DOCKER_SCHEMA_VERSION}`,
-      "--platform", "linux/amd64", "--restart", "unless-stopped",
-      "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${token}`,
-      ...(inferenceCredential == null ? [] : ["--env", "SAND_DEV_INFERENCE_TOKEN_FILE=/run/grok-bot/inference.json", "--env", `SAND_BACKEND_URL=${inferenceCredential.backendUrl}`]),
-      "--publish", "127.0.0.1:1337:1337", "--publish", "127.0.0.1:1339:1339", "--publish", "127.0.0.1:1340:1340",
-      "--publish", "127.0.0.1:6080:6080", "--publish", "127.0.0.1:6081:6081", "--publish", "127.0.0.1:8790:8790",
-      "--volume", "grok-bot-local-vm-workspace:/workspace", "--volume", "grok-bot-local-vm-data:/home/box/sand-data",
-      "--mount", `type=bind,src=${hostBundle.path},dst=/home/box/sand-host/host-main.cjs,readonly`,
-      "--mount", `type=bind,src=${dirname(hostBundle.boxExecDaemonPath)},dst=/home/box/box-exec-daemon,readonly`,
-      ...(inferenceFile == null ? [] : ["--mount", `type=bind,src=${dirname(inferenceFile)},dst=/run/grok-bot,readonly`]),
-      ...authMounts,
-      LOCAL_DOCKER_BOX_IMAGE,
-    ]);
+    const created = await runDocker(buildDockerRunArguments({
+      token,
+      hostBundle,
+      inferenceCredential,
+      inferenceFile,
+      authMounts,
+    }));
     if (!created.ok) throw new Error(`Could not create the local Docker VM: ${created.output}`);
   }
   const deadline = Date.now() + READY_TIMEOUT_MS;

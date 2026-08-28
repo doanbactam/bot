@@ -9,7 +9,7 @@ The project began as an attempt to understand how the desktop app was put
 together. It now contains readable TypeScript implementations of its Electron,
 host, coordinator, local-execution, protocol, and renderer boundaries, plus a
 deterministic toolchain for turning those sources back into a working macOS
-application.
+application (and, experimentally, a linux-x64 application directory).
 
 It also adds a few practical experiments:
 
@@ -89,8 +89,14 @@ Open **Settings → Router** to choose the backend used for new turns:
 | Codex | Existing local ChatGPT/Codex login | Direct Responses transport with Grok Bot tools |
 | OpenRouter | API key saved through the desktop secrets bridge | Grok Bot tool-execution loop |
 
-Cursor is the default. Claude Code and Codex do not require separate API keys
-when their local clients are already authenticated. The application preserves
+OpenRouter is the default, so the app runs independently of any Cursor login:
+saving an OpenRouter API key (or exporting `OPENROUTER_API_KEY`) is the only
+credential required, and no sign-in is demanded — without a Cursor session the
+app reports a local account instead of blocking on the sign-in screen. Cursor,
+Claude Code, and Codex remain available as explicit opt-in providers; Cursor
+credentials are only requested when inference actually routes through Cursor,
+and do not require separate API keys when their local clients are already
+authenticated. The application preserves
 streaming responses, thinking state, reactions, rich plugin mentions, and MCP
 tool execution across routed conversations.
 
@@ -106,16 +112,31 @@ of connecting to the remote sandbox.
 
 The container:
 
-- is bound only to loopback ports;
+- uses the pinned `public.ecr.aws/k0i0n2g5/cursorenvironments/universal:sand-box-latest`
+  image (linux/amd64), pulled explicitly before creation;
+- is bound only to loopback ports (`1337`, `1339`, `1340` gateway, `6080`/`6081`
+  noVNC desktop, `8790`);
 - mounts content-addressed host and daemon artifacts read-only;
-- reuses the user's existing provider authentication where needed;
-- is validated before the coordinator connects; and
+- mounts the user's `~/.codex` and `~/.claude` CLI credentials read-only when
+  present, so those router choices work in the box;
+- receives the OpenRouter key through the box secrets channel, so in-box
+  inference works without a remote credential;
+- gets `--shm-size 1g` so the in-box Chrome desktop stays stable;
+- reuses named volumes (`grok-bot-local-vm-workspace`, `grok-bot-local-vm-data`)
+  across recreations, so files survive app and container upgrades;
+- is validated with a gateway health check (up to three minutes) before the
+  coordinator connects; and
 - is stopped or replaced through the same settings lifecycle.
+
+The container is recreated automatically when the app runtime changes (host
+bundle sha or schema version); workspace and data volumes are preserved.
 
 Docker Desktop, or another compatible local Docker daemon, must be running.
 Remote mode remains the default.
 
 ## Requirements
+
+macOS packaging (the original reconstruction target):
 
 - macOS on Apple Silicon
 - Node.js 26.5.x
@@ -124,7 +145,21 @@ Remote mode remains the default.
 - Docker Desktop (optional, only for the local sandbox)
 - local Claude Code or Codex authentication for those router choices
 
+Linux packaging (`npm run package:linux`, linux-x64):
+
+- Linux x86-64 (glibc)
+- Node.js 26.5.x
+- build tools: `gcc`/`g++`, `make`, `python3` (for node-gyp native rebuilds)
+- official 7-Zip (`7zz`, to extract the pinned APFS DMG outside macOS; legacy
+  p7zip `7za`/`7z` builds predate APFS support and will not work)
+- Git LFS
+- Docker (optional, only for the local sandbox)
+- an OpenRouter API key for inference (Cursor, Claude Code, and Codex remain
+  selectable when their local clients are authenticated)
+
 ## Quick start
+
+macOS:
 
 ```sh
 git clone <your-repository-url>
@@ -136,6 +171,20 @@ npm run bootstrap
 npm run check
 npm run package
 open "dist/Grok Bot 0.18 Reconstructed.app"
+```
+
+Linux (x64):
+
+```sh
+git clone <your-repository-url>
+cd grok-bot-0.18-reconstructed
+git lfs install
+git lfs pull
+npm ci
+npm run bootstrap
+npm run check
+npm run package:linux
+"dist/Grok Bot 0.18 Reconstructed-linux-x64/grok-bot"
 ```
 
 `npm run bootstrap` first uses the Git LFS preservation copy of the pinned
@@ -151,6 +200,23 @@ bundle identity, ad-hoc signs it, and verifies the result. Output is written to:
 ```text
 dist/Grok Bot 0.18 Reconstructed.app
 ```
+
+`npm run package:linux` assembles the same hybrid reconstruction for linux-x64:
+the JS dependency tree from the pinned runtime is reused while the darwin-arch
+native modules are replaced with linux-x64 equivalents (tree-sitter is rebuilt
+against the Electron 42 ABI, better-sqlite3 uses the official WiseLibs
+electron-v146 prebuild, and tree-sitter-bash/whichlang-node are swapped for
+their published linux-x64 builds). The bundle is wrapped in an unmodified npm
+Electron 42.1.0 linux-x64 shell:
+
+```text
+dist/Grok Bot 0.18 Reconstructed-linux-x64/
+```
+
+On Linux, features that depend on macOS-only components degrade gracefully: the
+1Password/webauthn integration and the macOS process-list observation are
+unavailable (their binaries are not shipped for linux-x64 and are loaded
+lazily), and the "move to Applications folder" startup check is macOS-only.
 
 Reconstructed packages disable the upstream updater at the packaging boundary
 and default upstream Sentry and telemetry emission off. Explicitly supplied
@@ -204,6 +270,7 @@ npm run typecheck         # renderer TypeScript
 npm run source:typecheck  # runtime TypeScript
 npm run frontend:build    # build the readable renderer reconstruction
 npm run package           # build, sign, and verify the macOS app
+npm run package:linux     # assemble the linux-x64 application directory
 npm run verify            # verify an existing packaged app
 npm run smoke             # bounded native smoke check
 npm run publication:check # prove a fresh-history export is lossless
