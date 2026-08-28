@@ -153,11 +153,24 @@ export async function buildAsar({
     await writeFile(stagedPackagePath, `${JSON.stringify(stagedPackage, null, 2)}\n`);
   }
 
-  for (const directory of ["deps", "native"]) {
-    const source = path.join(runtimeUnpacked, directory);
-    const destination = path.join(stageRoot, "dist", directory);
-    await rm(destination, { recursive: true, force: true });
-    await cp(source, destination, { recursive: true, dereference: false, preserveTimestamps: true });
+  if (process.platform === "linux") {
+    // The pinned runtime ships darwin-arch native binaries; on Linux the JS
+    // dependency tree is reused while native modules are restaged from the
+    // same pinned package versions for linux-x64. dist/native (macOS-only
+    // sand-webauthn-signer / sand-op-launcher executables) is intentionally
+    // not staged; those features degrade gracefully.
+    const { stageLinuxRuntimeDependencies } = await import("./linux-runtime-deps.mjs");
+    await stageLinuxRuntimeDependencies({
+      runtimeDepsRoot: path.join(runtimeUnpacked, "deps"),
+      stageDepsRoot: path.join(stageRoot, "dist", "deps"),
+    });
+  } else {
+    for (const directory of ["deps", "native"]) {
+      const source = path.join(runtimeUnpacked, directory);
+      const destination = path.join(stageRoot, "dist", directory);
+      await rm(destination, { recursive: true, force: true });
+      await cp(source, destination, { recursive: true, dereference: false, preserveTimestamps: true });
+    }
   }
   await stageElectronRuntimeDependencyResolution(path.join(stageRoot, "dist", "deps"));
 

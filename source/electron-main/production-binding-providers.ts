@@ -464,18 +464,21 @@ export function createElectronProductionNotificationsBinding(): NotificationsBin
 export function createProductionStartupBinding(
   ports: ElectronStartupProviderPorts,
 ): ElectronProductionStartupBindings {
-  for (const [value, label] of [
-    [ports?.app?.setPath, "electron.app.setPath()."],
-    [ports?.app?.getPath, "electron.app.getPath()."],
-    [ports?.app?.isInApplicationsFolder, "electron.app.isInApplicationsFolder()."],
-    [ports?.app?.moveToApplicationsFolder, "electron.app.moveToApplicationsFolder()."],
-    [ports?.app?.relaunch, "electron.app.relaunch()."],
-    [ports?.app?.exit, "electron.app.exit()."],
-    [ports?.dialog?.showMessageBox, "electron.dialog.showMessageBox()."],
-  ] as const) requireFunction(value, label);
+  const platform = ports.platform ?? process.platform;
+  requireFunction(ports?.app?.setPath, "electron.app.setPath().");
+  requireFunction(ports?.app?.getPath, "electron.app.getPath().");
+  // Electron only exposes the Applications-folder APIs on macOS; the startup
+  // move check itself is a no-op elsewhere, so the binding must not demand
+  // them on other platforms.
+  if (platform === "darwin") {
+    requireFunction(ports?.app?.isInApplicationsFolder, "electron.app.isInApplicationsFolder().");
+    requireFunction(ports?.app?.moveToApplicationsFolder, "electron.app.moveToApplicationsFolder().");
+  }
+  requireFunction(ports?.app?.relaunch, "electron.app.relaunch().");
+  requireFunction(ports?.app?.exit, "electron.app.exit().");
+  requireFunction(ports?.dialog?.showMessageBox, "electron.dialog.showMessageBox().");
   const argv = ports.argv ?? process.argv;
   const env = ports.env ?? process.env;
-  const platform = ports.platform ?? process.platform;
   const buffered: Array<{ readonly level: Parameters<ProductionTelemetrySink["reportDesktopStartup"]>[0]; readonly metadata: Parameters<ProductionTelemetrySink["reportDesktopStartup"]>[1] }> = [];
   let telemetry: ProductionTelemetrySink | undefined;
   const report: ElectronProductionStartupBindings["report"] = (level, metadata) => {

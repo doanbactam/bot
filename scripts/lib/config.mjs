@@ -44,5 +44,9 @@ export const reconstructedName = "Grok Bot 0.18 Reconstructed";
 export const fidelityBundleId = "com.anysphere.sand.reconstructed.fidelity";
 export const fidelityName = "Grok Bot 0.18 Fidelity";
 export const dmgUrl = "https://downloads.cursor.com/grokbot/stable/darwin-arm64/0.18.0/Grok_Bot_0.18.0.dmg";
+// Git LFS preservation copy of the pinned release; used as a download fallback
+// when the vendor CDN denies access (some corporate networks and sandboxes).
+export const dmgMirrorUrl = "https://media.githubusercontent.com/media/doanbactam/bot/main/research-archives/original/0.18.0/macos-arm64/Grok_Bot_0.18.0.dmg";
 export const dmgSha256 = "a253ccd8aab01e083f9812a0264354c5034d8ba7f0610bbb557e82ae77d203eb";
 export const upstreamAsarSha256 = "6665408168466f9cacc6087e917890c17f59d2e2e9c2404a5c4a59ad79c1de58";
+export const linuxOutputDir = path.join(outputDir, "Grok Bot 0.18 Reconstructed-linux-x64");

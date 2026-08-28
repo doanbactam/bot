@@ -15,11 +15,27 @@ async function exists(target) {
   }
 }
 
+export async function runtimeAsarSha256(appPath) {
+  const archive = path.join(appPath, "Contents", "Resources", "app.asar");
+  return createHash("sha256").update(await readFile(archive)).digest("hex");
+}
+
 export async function validateRuntimeApp(appPath) {
   const infoPlist = path.join(appPath, "Contents", "Info.plist");
   const executable = path.join(appPath, "Contents", "MacOS", "Grok Bot");
   const unpacked = path.join(appPath, "Contents", "Resources", "app.asar.unpacked");
-  const version = await capture(SYSTEM_TOOLS.plutil, ["-extract", "CFBundleShortVersionString", "raw", infoPlist]);
+  let version;
+  if (process.platform === "darwin") {
+    version = await capture(SYSTEM_TOOLS.plutil, ["-extract", "CFBundleShortVersionString", "raw", infoPlist]);
+  } else {
+    // Outside macOS there is no plutil; the checksum-pinned app.asar identity
+    // proves the runtime is exactly the pinned 0.18.0 payload.
+    const asarDigest = await runtimeAsarSha256(appPath);
+    if (asarDigest !== upstreamAsarSha256) {
+      throw new Error(`Expected Grok Bot ${upstreamVersion} (asar sha256 ${upstreamAsarSha256}), got ${asarDigest} at ${appPath}`);
+    }
+    version = upstreamVersion;
+  }
   if (version !== upstreamVersion) {
     throw new Error(`Expected Grok Bot ${upstreamVersion}, got ${version} at ${appPath}`);
   }
@@ -45,7 +61,7 @@ export async function cacheRuntimeFromApp(source) {
   const runtimeDir = path.dirname(cachedRuntimeApp);
   await mkdir(runtimeDir, { recursive: true });
   await rm(cachedRuntimeApp, { recursive: true, force: true });
-  await run(SYSTEM_TOOLS.ditto, [validated, cachedRuntimeApp]);
+  await cp(validated, cachedRuntimeApp, { recursive: true, dereference: false, preserveTimestamps: true });
   return await validateRuntimeApp(cachedRuntimeApp);
 }
 
