@@ -1,6 +1,14 @@
 export const SAND_INFERENCE_PROVIDERS = ["cursor", "claude-code", "codex", "openrouter"] as const;
 export type SandInferenceProvider = (typeof SAND_INFERENCE_PROVIDERS)[number];
 
+/**
+ * The reconstruction runs independently of any Cursor session by default:
+ * OpenRouter only needs an API key saved through the desktop secrets bridge
+ * (or the OPENROUTER_API_KEY environment variable). Cursor remains available
+ * as an explicit opt-in provider.
+ */
+export const DEFAULT_SAND_INFERENCE_PROVIDER: SandInferenceProvider = "openrouter";
+
 export interface SandInferenceRouterUsageProvider {
   readonly requests: number;
   readonly inputTokens: number;

@@ -7,7 +7,13 @@ import type { PrivacyMode } from "../../shared/observability/sentry-privacy-mode
 
 export const SUPPORTED_DASHBOARD_ACTIONS = new Set(["requestLimitIncrease"] as const);
 export const NO_SAND_PR_REVIEW_PREFERENCES = { user: undefined, team: undefined } as const;
+
+import { reportedAuthStatus } from "./auth-reporting.js";
+
+export { LOCAL_ACCOUNT_AUTH_ID, localAccountAuthStatus, reportedAuthStatus } from "./auth-reporting.js";
+
 export interface DashboardActionRequest { readonly action: "requestLimitIncrease"; readonly args: Readonly<Record<string, string>> }
+
 export interface AccountRuntime {
   observe(status: SandAuthStatus): void;
   whenIdle(): Promise<SandAuthStatus | null | undefined>;
@@ -44,11 +50,14 @@ export function createCursorAuthWiring(deps: {
   };
   readonly syncHostSettingsToBox: (settings: { readonly localToolPermission: string }) => Promise<void>;
   readonly reportFailure?: (domain: string, operation: string, error: unknown) => void;
+  /** Defaults to true: real upstream behavior demands a Cursor session. */
+  readonly isCursorAuthRequired?: () => boolean;
 }) {
   let cursorAuthService: AuthServicePort | undefined;
   let unsubscribeAuthStatus: (() => void) | undefined;
   let authStatusFreshness = 0;
   let localToolCeilingSyncSeq = 0;
+  const cursorAuthRequired = (): boolean => deps.isCursorAuthRequired?.() ?? true;
   const readPrivacyMode = deps.fetchUserPrivacyMode ?? (async (getAccessToken: AccessTokenReader) => await fetchUserPrivacyMode(getAccessToken, {}));
   const readLocalToolPermissionCeiling = deps.fetchLocalToolPermissionCeiling ?? (async (getAccessToken: AccessTokenReader) => await fetchLocalToolPermissionCeiling(getAccessToken, {}));
   const syncSentryAccount = deps.syncSentryAccount ?? (async (status: SandAuthStatus, privacyMode: () => Promise<unknown>) => await syncSandSentryAccount(status as Parameters<typeof syncSandSentryAccount>[0], async () => await privacyMode() as PrivacyMode));
@@ -68,10 +77,14 @@ export function createCursorAuthWiring(deps: {
 
   function deliverCursorAuthStatus(service: AuthServicePort, status: SandAuthStatus): void {
     authStatusFreshness += 1;
-    deps.emitAuthStatus({ ...status, freshness: authStatusFreshness });
+    deps.emitAuthStatus({ ...reportedAuthStatus(status, cursorAuthRequired()), freshness: authStatusFreshness });
     if (deps.sentryEnabled) void syncSentryAccount(status, () => readPrivacyMode((options) => service.getValidAccessToken(options)));
+    // The local-tool ceiling stays derived from the real session: token-backed
+    // lookups must never run for the synthetic local account.
     void syncLocalToolPermissionCeiling(service, status);
   }
+
+  const deliveredStatus = (status: SandAuthStatus): SandAuthStatus => reportedAuthStatus(status, cursorAuthRequired());
 
   async function ensureCursorAuthService(): Promise<AuthServicePort> {
     if (cursorAuthService != null) return cursorAuthService;
@@ -93,7 +106,7 @@ export function createCursorAuthWiring(deps: {
     unsubscribeAuthStatus = service.subscribe((status) => {
       const runtime = deps.getAccountRuntime();
       if (runtime == null) deliverCursorAuthStatus(service, status);
-      else runtime.observe(status);
+      else runtime.observe(deliveredStatus(status));
     });
     cursorAuthService = service;
     if (deps.sentryEnabled) void service.getStatus().then((status) => syncSentryAccount(status, () => readPrivacyMode((options) => service.getValidAccessToken(options))));
@@ -140,8 +153,11 @@ export function createCursorAccountEdgePort(deps: {
   readonly cancelTrial: (getAccessToken: AccessTokenReader) => Promise<unknown>;
   readonly invokeDashboardAction: (getAccessToken: AccessTokenReader, request: DashboardActionRequest) => Promise<unknown>;
   readonly productDisplayName?: string;
+  /** Defaults to true: real upstream behavior demands a Cursor session. */
+  readonly isCursorAuthRequired?: () => boolean;
 }) {
   let sandAccessReader: Promise<ReturnType<typeof createSandAccessReader>> | undefined;
+  const cursorAuthRequired = (): boolean => deps.isCursorAuthRequired?.() ?? true;
   const settledStatus = async (getStatus: () => Promise<SandAuthStatus>) => await deps.getAccountRuntime()?.whenIdle() ?? await getStatus();
   const sandAccessDeps = async () => {
     const service = await deps.ensureCursorAuthService();
@@ -156,10 +172,10 @@ export function createCursorAccountEdgePort(deps: {
   return {
     getSandAccess: async () => await (await ensureSandAccessReader()).read(),
     getSandAccessFresh: async () => (await readSandAccessOnce(await sandAccessDeps())).access,
-    getAuthStatus: async () => { const freshness = deps.currentAuthStatusFreshness(); const service = await deps.ensureCursorAuthService(); return { ...await settledStatus(() => service.getStatus()), freshness }; },
+    getAuthStatus: async () => { const freshness = deps.currentAuthStatusFreshness(); const service = await deps.ensureCursorAuthService(); return { ...await reportedAuthStatus(await settledStatus(() => service.getStatus()), cursorAuthRequired()), freshness }; },
     login: async () => withService(async (service) => { const result = await service.login(); const settled = await deps.getAccountRuntime()?.whenIdle(); await deps.resetMcpManager(); await deps.refreshHostMcp(); return settled ?? result; }),
-    cancelLogin: async () => withService(async (service) => { const result = await service.cancelLogin(); return await deps.getAccountRuntime()?.whenIdle() ?? result; }),
-    logout: async () => withService(async (service) => { const result = await service.logout(); return await deps.getAccountRuntime()?.whenIdle() ?? result; }),
+    cancelLogin: async () => withService(async (service) => { const result = await service.cancelLogin(); return await reportedAuthStatus(await deps.getAccountRuntime()?.whenIdle() ?? result, cursorAuthRequired()); }),
+    logout: async () => withService(async (service) => { const result = await service.logout(); return await reportedAuthStatus(await deps.getAccountRuntime()?.whenIdle() ?? result, cursorAuthRequired()); }),
     updateAccountName: async (name: unknown) => {
       if (typeof name !== "string" || name.length > 200) throw new Error("updateCursorAccountName requires a bounded name string.");
       return await withService(async (service) => { const result = await service.updateDisplayName(name); return await deps.getAccountRuntime()?.whenIdle() ?? result; });

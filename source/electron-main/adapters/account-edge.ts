@@ -1,5 +1,6 @@
 import { fetchSandAccess } from "../account/access.js";
 import { createCursorAccountEdgePort, createTranscriptionManagerEnsure, type AccountRuntime } from "../account/cursor-auth-wiring.js";
+import { isCursorAuthRequiredFor } from "./account-oauth.js";
 import { resolveCursorAvatarDataUrl } from "../account/cursor-avatar.js";
 import {
   cancelSandTrial,
@@ -57,6 +58,7 @@ export function createElectronProductionCursorAccountBinding(): ElectronProducti
         cancelTrial: (getAccessToken) => cancelSandTrial(getAccessToken, { getMachineId }),
         invokeDashboardAction: (getAccessToken, request) => invokeSandDashboardAction(getAccessToken, request, { getMachineId }),
         productDisplayName: SAND_PRODUCT_DISPLAY_NAME,
+        isCursorAuthRequired: () => isCursorAuthRequiredFor(context),
       });
     },
     createTranscriptionManager(context) {

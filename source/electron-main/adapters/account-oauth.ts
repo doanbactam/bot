@@ -1,9 +1,25 @@
-import { createCursorAuthWiring, type AuthServicePort } from "../account/cursor-auth-wiring.js";
+import { createCursorAuthWiring, reportedAuthStatus, type AuthServicePort } from "../account/cursor-auth-wiring.js";
+import type { SandAuthStatus } from "../account/cursor-auth.js";
 import type { ElectronProductionAdapterBindings } from "../production-adapters.js";
 import type { ProductionAccountService, ProductionServiceContext } from "../main-production-services.js";
 import { requireFunction, requireObject } from "./provider-guards.js";
 
 type CursorAuthWiringDeps = Parameters<typeof createCursorAuthWiring>[0];
+
+/**
+ * Cursor credentials are only necessary when inference routes through Cursor.
+ * With any other provider (the OpenRouter default, Claude Code, Codex) the app
+ * runs without a Cursor session, so a missing session is reported as a local
+ * account instead of a blocking sign-out.
+ */
+export function isCursorAuthRequiredFor(context: Pick<ProductionServiceContext, "settings">): boolean {
+  try {
+    return context.settings.settingsStore.getInferenceProvider() === "cursor";
+  } catch {
+    // Fail toward the real upstream behavior: demand the session.
+    return true;
+  }
+}
 
 export interface ProductionAccountOAuthPorts {
   readonly resolveWiringDeps?: (context: ProductionServiceContext) => CursorAuthWiringDeps;
@@ -32,6 +48,7 @@ function defaultWiringDeps(context: ProductionServiceContext): CursorAuthWiringD
     openExternal: async (url) => { await context.native.shell.openExternal(url); },
     getAccountRuntime: () => accountRuntimeOf(context),
     emitAuthStatus: (status) => context.requireMainEdge().emit("cursor-auth-changed", status),
+    isCursorAuthRequired: () => isCursorAuthRequiredFor(context),
     sentryEnabled: context.env.SAND_DISABLE_SENTRY !== "1",
     settingsStore: context.settings.settingsStore,
     syncHostSettingsToBox: async (settings) => {
@@ -58,10 +75,13 @@ export function createProductionAccountOAuthAdapter(
     async create(context): Promise<ProductionAccountService> {
       const wiring = createCursorAuthWiring((ports?.resolveWiringDeps ?? defaultWiringDeps)(context));
       const service = validateAuthService(await wiring.ensureCursorAuthService());
+      const isCursorAuthRequired = () => isCursorAuthRequiredFor(context);
+      const reportedGetStatus = async (): Promise<SandAuthStatus> =>
+        reportedAuthStatus(await service.getStatus(), isCursorAuthRequired());
       const subscriptions = new Set<() => void>();
       let disposed = false;
       return {
-        getStatus: () => service.getStatus(),
+        getStatus: reportedGetStatus,
         currentAuthStatusFreshness: wiring.currentAuthStatusFreshness,
         deliverCursorAuthStatus(status) {
           if (disposed) throw new Error("Electron production account adapter is disposed.");

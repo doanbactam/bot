@@ -10,10 +10,19 @@ export interface RouterProvider {
   readonly usageSource: "cursor" | "external";
 }
 
-export const DEFAULT_ROUTER_PROVIDER: RouterProviderId = "cursor";
+// The reconstruction defaults to OpenRouter so it runs independently of any
+// Cursor session: a saved OPENROUTER_API_KEY is the only credential required.
+export const DEFAULT_ROUTER_PROVIDER: RouterProviderId = "openrouter";
 export const ROUTER_PROVIDER_PERSISTENCE_KEY = "settings.router-provider.v1";
 
 export const ROUTER_PROVIDERS: readonly RouterProvider[] = [
+  {
+    id: "openrouter",
+    label: "OpenRouter",
+    description: "Use models and billing from your OpenRouter account. The default, independent of any Cursor login.",
+    usageDescription: "OpenRouter usage and spend are managed in your OpenRouter account and are not exposed as an in-app meter.",
+    usageSource: "external"
+  },
   {
     id: "cursor",
     label: "Cursor",
@@ -33,13 +42,6 @@ export const ROUTER_PROVIDERS: readonly RouterProvider[] = [
     label: "Codex",
     description: "Use OpenAI's Codex provider for agent requests.",
     usageDescription: "Codex usage is managed by your OpenAI account and is not exposed as an in-app meter.",
-    usageSource: "external"
-  },
-  {
-    id: "openrouter",
-    label: "OpenRouter",
-    description: "Use models and billing from your OpenRouter account.",
-    usageDescription: "OpenRouter usage and spend are managed in your OpenRouter account and are not exposed as an in-app meter.",
     usageSource: "external"
   }
 ];
