@@ -136,6 +136,9 @@ import { MessageReactionAction, ReactionPills } from "../recovered/features/conv
 import type { TranscriptMessageReactionSlotProps } from "../recovered/features/conversation/cards/transcript-card/message-actions";
 import { LocalToolPermissionDock, type LocalToolPermissionRequest } from "../recovered/features/permissions/local-tool/view";
 import {
+  activeAgentIdFromCoordinatorEvent,
+  agentPayloadFromCoordinatorUpsertEvent,
+  agentsPayloadFromCoordinatorEvent,
   parseDesktopIntent,
   projectRendererAgent,
   projectRendererAgents,
@@ -2319,7 +2322,10 @@ export function ProductionRenderer({ bridge, coordinatorPort }: ProductionRender
     });
     const stopAgents = client.subscribe("agents", (value) => {
       if (!isCurrent() || accountRef.current?.kind !== "logged-in") return;
-      const projected = projectRendererAgents(value);
+      const payload = agentsPayloadFromCoordinatorEvent(value);
+      if (payload == null) return;
+      const projected = projectRendererAgents(payload);
+      const nextActiveId = activeAgentIdFromCoordinatorEvent(value);
       setPrivacyBlocked(false);
       setRosterLoadFailed(false);
       setRosterFailure(null);
@@ -2327,10 +2333,13 @@ export function ProductionRenderer({ bridge, coordinatorPort }: ProductionRender
       completeRosterAgentIdsRef.current = projected.map((agent) => agent.id);
       selectionStore.reconcile({ agentIds: projected.map((agent) => agent.id), isRosterComplete: true });
       setHasLoadedAgents(true);
+      if (nextActiveId != null && nextActiveId !== activeAgentIdRef.current) {
+        void openAgentRef.current(nextActiveId);
+      }
     });
     const stopUpsert = client.subscribe("agent-upserted", (value) => {
       if (!isCurrent() || accountRef.current?.kind !== "logged-in") return;
-      const projected = projectRendererAgent(value);
+      const projected = projectRendererAgent(agentPayloadFromCoordinatorUpsertEvent(value));
       if (projected != null) setAgents((current) => [projected, ...current.filter((agent) => agent.id !== projected.id)].sort((a, b) => b.updatedAt - a.updatedAt));
     });
     const stopTranscript = reactionRoot?.feed.observeEntriesFeed({
@@ -3127,14 +3136,30 @@ export function ProductionRenderer({ bridge, coordinatorPort }: ProductionRender
     finally { setBusy(false); }
   };
 
-  const deleteAgentById = async (agentId: string) => {
+  const deleteAgentsById = async (agentIds: readonly string[]) => {
     if (client == null) throw new Error("Coordinator unavailable");
-    await client.call("deleteAgents", { ids: [agentId] });
-    const remaining = agentsRef.current.filter((agent) => agent.id !== agentId);
-    setAgents(remaining);
-    completeRosterAgentIdsRef.current = remaining.map((agent) => agent.id);
-    selectionStore.reconcile({ agentIds: remaining.map((agent) => agent.id), isRosterComplete: true });
+    const ids = [...new Set(agentIds.filter((id) => id.length > 0))];
+    if (ids.length === 0) return;
+    const deleted = new Set(ids);
+    const deletingActive = deleted.has(activeAgentIdRef.current);
+    await client.call("deleteAgents", { ids });
+    persistPinnedAgentIds(pinnedAgentIdsRef.current.filter((id) => !deleted.has(id)));
+    setEntriesByAgent((current) => {
+      const next = { ...current };
+      for (const id of ids) delete next[id];
+      return next;
+    });
+    await refreshRoster();
+    if (!deletingActive) return;
+    const nextId = completeRosterAgentIdsRef.current.find((id) => !deleted.has(id)) ?? "";
+    if (nextId.length > 0) await openAgent(nextId);
+    else {
+      selectionStore.select("");
+      selectionStore.settle("");
+    }
   };
+
+  const deleteAgentById = async (agentId: string) => deleteAgentsById([agentId]);
 
   // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js bytes 5502990-5504050
   // sFn: mounted section rename, move, delete-confirmation callbacks use the coordinator-backed edit surface.

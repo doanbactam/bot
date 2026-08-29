@@ -54,9 +54,11 @@ export class SandMcpCatalogFlow {
         getAccessToken,
         this.core.getMachineId,
       );
-    } catch (error) {
-      if (!usable) throw error;
-      return cached.views;
+    } catch {
+      // Marketplace is remote (Cursor backend). Offline / timeout must not
+      // surface as an IPC handler failure — fall back to cache or empty.
+      if (usable) return cached.views;
+      return [];
     }
     this.catalog.clear();
     const views = listing.plugins

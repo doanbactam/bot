@@ -5,6 +5,7 @@ import { CLIENT_PERSISTENCE_CHANNELS } from "../../shared/persistence.js";
 import { assertTrustedCoordinatorPortRequester } from "../coordinator/coordinator-port-ipc-guard.js";
 import { createBoxSecretsPushTelemetry, type BoxSecretsPushAttempt } from "../telemetry/box-secrets-push-telemetry.js";
 import { assertTrustedClientPersistenceSender, assertTrustedSecretsSender } from "./secrets-ipc-guard.js";
+import { mirrorBoxSecretsToDisk } from "./box-secrets-disk-mirror.js";
 import {
   SandSecureStorageUnavailableError,
   SandUserSecretsStore,
@@ -129,15 +130,23 @@ export function registerSecretsIpc(deps: {
     if (typeof request.key !== "string") return null;
     return userSecretsStore.reveal(request.key);
   });
+  const mirrorPersistedSecrets = async (): Promise<void> => {
+    const snapshot = await userSecretsStore.exportSnapshot();
+    await mirrorBoxSecretsToDisk(snapshot.secrets);
+  };
   ipcMain.handle("sand:secrets-upsert", async (event, request) => {
     guards.assertTrustedSecretsSender(event);
     await userSecretsStore.upsert(parseSecretEntries(request.entries));
+    // Always mirror to disk so the inference router can read the key even when
+    // the live box environment push is unreachable or still starting.
+    await mirrorPersistedSecrets();
     return { synced: await pushBoxSecrets() };
   });
   ipcMain.handle("sand:secrets-delete", async (event, request) => {
     guards.assertTrustedSecretsSender(event);
     const keys = Array.isArray(request.keys) ? request.keys.filter((key: unknown): key is string => typeof key === "string") : [];
     await userSecretsStore.remove(keys);
+    await mirrorPersistedSecrets();
     return { synced: await pushBoxSecrets() };
   });
   ipcMain.handle(CLIENT_PERSISTENCE_CHANNELS.read, async (event, request) => {

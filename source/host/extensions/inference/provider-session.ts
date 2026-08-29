@@ -24,7 +24,8 @@ type RoutedToolExecutor = (tool: Loose, args: unknown, toolCallId: string) => Pr
 const GROK_ROUTER_SYSTEM_PROMPT = [
   "You are Grok Bot, a warm, concise desktop assistant.",
   "You are running inside Grok Bot, not inside Codex CLI or Claude Code.",
-  "The tools supplied with this request are Grok Bot's already-connected plugins and accounts. Use them whenever they are relevant instead of claiming that a plugin is unavailable or asking the user to reconnect it.",
+  "The Shell tool runs commands on Grok Bot's computer (the local Docker box), not on the user's host machine. Prefer Shell for file and system work inside that box.",
+  "The other tools supplied with this request are Grok Bot's already-connected plugins and accounts. Use them whenever they are relevant instead of claiming that a plugin is unavailable or asking the user to reconnect it.",
   "Never ask for an API key for an already-connected plugin. Respond directly to the user in natural language after completing any necessary tool calls.",
 ].join("\n");
 
@@ -46,6 +47,20 @@ function openRouterCredential(): string {
   const value = process.env.OPENROUTER_API_KEY?.trim() || persistedSecrets().OPENROUTER_API_KEY?.trim();
   if (value == null || value.length === 0) throw new Error("OpenRouter needs OPENROUTER_API_KEY. Add it in Settings → Router.");
   return value;
+}
+
+function basetenCredential(): string {
+  const value = process.env.BASETEN_API_KEY?.trim() || persistedSecrets().BASETEN_API_KEY?.trim();
+  if (value == null || value.length === 0) throw new Error("Baseten needs BASETEN_API_KEY. Add it in Settings → Router.");
+  return value;
+}
+
+function configuredBasetenModel(): string {
+  return process.env.SAND_BASETEN_MODEL?.trim() || "moonshotai/Kimi-K2.6";
+}
+
+function basetenBaseUrl(): string {
+  return process.env.SAND_BASETEN_BASE_URL?.trim() || "https://inference.baseten.co/v1";
 }
 
 function providerPrompt(messages: readonly ProviderMessage[]): string {
@@ -254,17 +269,34 @@ function openRouterExecutor(messages: readonly ProviderMessage[], invocationId: 
   return { fullStream: result.fullStream, response: result.response, usage: result.usage, extendedUsage, providerMetadata: result.providerMetadata, invocationId: Promise.resolve(invocationId) };
 }
 
+function basetenExecutor(messages: readonly ProviderMessage[], invocationId: string, definitions?: readonly Loose[], executeTool?: RoutedToolExecutor, onUsage?: (usage: UsageRecord) => void) {
+  const id = configuredBasetenModel();
+  const model: LanguageModelV1 = createOpenAI({ apiKey: basetenCredential(), baseURL: basetenBaseUrl(), compatibility: "compatible", name: "baseten" }).chat(id as any);
+  const tools = toToolSet(definitions, executeTool);
+  const result = streamText({ model, system: GROK_ROUTER_SYSTEM_PROMPT, messages: messages as CoreMessage[], ...(tools === undefined ? {} : { tools }), toolCallStreaming: true, maxSteps: tools === undefined ? 1 : 8 });
+  const extendedUsage = result.usage.then(value => ({ inputTokens: value.promptTokens, outputTokens: value.completionTokens, cacheReadTokens: 0, cacheWriteTokens: 0, maxTokens: 0 }));
+  if (onUsage != null) void extendedUsage.then(onUsage);
+  return { fullStream: result.fullStream, response: result.response, usage: result.usage, extendedUsage, providerMetadata: result.providerMetadata, invocationId: Promise.resolve(invocationId) };
+}
+
 class ProviderPromptExecutor extends BasePromptExecutor<ProviderMessage> {
   constructor(readonly provider: RoutedProvider, initialMessages?: readonly ProviderMessage[], readonly onUsage?: (usage: UsageRecord) => void) { super(new BasePromptBuilder(initialMessages)); }
   stream(_ctx: unknown, invocationId = crypto.randomUUID(), definitions?: readonly Loose[]) {
     if (this.provider === "codex") return codexExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
     if (this.provider === "claude-code") return claudeExecutor(this.getMessages(), invocationId, this.onUsage);
+    if (this.provider === "baseten") return basetenExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
     return openRouterExecutor(this.getMessages(), invocationId, definitions, undefined, this.onUsage);
   }
 }
 
 export function createProviderPromptSession(provider: RoutedProvider): { getModelId(): string; getExecutor(state?: unknown): PromptExecutor } {
-  const modelId = provider === "codex" ? configuredCodexModel() : provider === "claude-code" ? "claude-code" : process.env.SAND_OPENROUTER_MODEL?.trim() || "openai/gpt-5.2";
+  const modelId = provider === "codex"
+    ? configuredCodexModel()
+    : provider === "claude-code"
+      ? "claude-code"
+      : provider === "baseten"
+        ? configuredBasetenModel()
+        : process.env.SAND_OPENROUTER_MODEL?.trim() || "openai/gpt-5.2";
   return { getModelId: () => modelId, getExecutor: state => new ProviderPromptExecutor(provider, Array.isArray(state) ? state as ProviderMessage[] : undefined, usage => recordRoutedUsage(provider, usage)) };
 }
 
@@ -280,7 +312,9 @@ export async function runRoutedProviderText(provider: RoutedProvider, messages: 
     ? codexExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage)
     : provider === "claude-code"
       ? claudeExecutor(messages, invocationId, onUsage, options?.mcpServerUrl)
-      : openRouterExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage);
+      : provider === "baseten"
+        ? basetenExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage)
+        : openRouterExecutor(messages, invocationId, options?.tools, options?.executeTool, onUsage);
   let text = "";
   for await (const event of result.fullStream) {
     if (event.type === "text-delta" && typeof event.textDelta === "string") {

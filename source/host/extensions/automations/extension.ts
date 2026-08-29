@@ -4,6 +4,7 @@ import { defineHostExtension } from "../../../internal/host-extensions.js";
 import { getConfiguredBackendUrl } from "../../../shared/node/cursor-token.js";
 import { AutomationsService } from "../../../packages/proto/generated/aiserver/v1/automations_connect.js";
 import { createSandCursorBackendClient } from "../../../shared/node/cursor-backend/cursor-inference.js";
+import { isLocalDockerIndependentAccessToken } from "../../../shared/local-docker-independent-credential.js";
 import { inspectAgentAutomationDefinitions } from "../../automations/automation-store.js";
 import { getSandAgentsRootDir } from "../../storage/agent-paths.js";
 import { HostExtensions } from "../extension-ids.generated.js";
@@ -17,7 +18,11 @@ import { SandTriggerHub } from "./sand-trigger-hub.js";
 export const HUB_RECONCILE_INTERVAL_MS = 15_000, RELAY_POLL_INTERVAL_MS = 4_000, CONNECT_WATCH_POLL_INTERVAL_MS = 5_000;
 export const SAND_BOX_BOOT_STARTED_AT_MS_ENV = "SAND_BOX_BOOT_STARTED_AT_MS";
 export function getBoxUptimeMs(): number | undefined { const raw = process.env[SAND_BOX_BOOT_STARTED_AT_MS_ENV]?.trim(); if (!raw) return undefined; const started = Number(raw); return Number.isFinite(started) && started > 0 ? Math.max(0, Date.now() - started) : undefined; }
-export function reconcileWhenAuthenticated(args: { auth: { peekAccessToken(): string | null; subscribeToRenewal(listener: () => void): () => void }; reconcile(): void }): () => void { let done = false; const once = () => { if (done || args.auth.peekAccessToken() == null) return; done = true; args.reconcile(); }; const off = args.auth.subscribeToRenewal(once); once(); return off; }
+export function hasCloudAutomationCredential(peekAccessToken: () => string | null): boolean {
+  const token = peekAccessToken();
+  return token != null && !isLocalDockerIndependentAccessToken(token);
+}
+export function reconcileWhenAuthenticated(args: { auth: { peekAccessToken(): string | null; subscribeToRenewal(listener: () => void): () => void }; reconcile(): void }): () => void { let done = false; const once = () => { if (done || !hasCloudAutomationCredential(() => args.auth.peekAccessToken())) return; done = true; args.reconcile(); }; const off = args.auth.subscribeToRenewal(once); once(); return off; }
 
 interface AutomationTranscript {
   listAgents(): Promise<readonly { id: string }[]>;
@@ -58,7 +63,7 @@ export const automationsExtension = defineHostExtension({
         getMachineId: async () => await deps.auth.getMachineId()
       }) as unknown as CloudSyncClient,
       reportDiagnostic: (diagnostic) => deps.telemetry.logs.reportHostExtensionDiagnostic(diagnostic),
-      hasCredential: () => deps.auth.peekAccessToken() != null,
+      hasCredential: () => hasCloudAutomationCredential(() => deps.auth.peekAccessToken()),
       listAgentIds: async () => (await deps.transcript.listAgents()).map(({ id }) => id),
       listAutomations: () => deps.transcript.listAllAutomationDefinitions(),
       getTimeZone: () => deps.settings.getUserTimeZone(),

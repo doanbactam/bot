@@ -6,6 +6,7 @@ import { runRoutedProviderText } from "../host/extensions/inference/provider-ses
 import type { SandInferenceProvider } from "../shared/inference-router.js";
 import { SandSettingsStore } from "../shared/node/settings/sand-settings-store.js";
 import { createRoutedMcpBridge } from "./routed-mcp-bridge.js";
+import { executeRoutedShell, isRoutedShellTool, withRoutedShellTools } from "./routed-shell.js";
 
 type StoredEntry = {
   readonly provider: Exclude<SandInferenceProvider, "cursor">;
@@ -34,7 +35,7 @@ export function parseInferenceRouterTranscriptStore(value: unknown): Store {
     const entries: StoredEntry[] = [];
     for (const raw of rawEntries) {
       const row = asRecord(raw);
-      if (row == null || !["codex", "claude-code", "openrouter"].includes(String(row.provider)) || !["user", "assistant"].includes(String(row.role)) || typeof row.content !== "string" || typeof row.id !== "string" || typeof row.timestampMs !== "number" || (row.clientNonce !== undefined && typeof row.clientNonce !== "string") || (row.richText !== undefined && typeof row.richText !== "string")) continue;
+      if (row == null || !["codex", "claude-code", "openrouter", "baseten"].includes(String(row.provider)) || !["user", "assistant"].includes(String(row.role)) || typeof row.content !== "string" || typeof row.id !== "string" || typeof row.timestampMs !== "number" || (row.clientNonce !== undefined && typeof row.clientNonce !== "string") || (row.richText !== undefined && typeof row.richText !== "string")) continue;
       if (row.reactions !== undefined && (!Array.isArray(row.reactions) || row.reactions.some(reaction => asRecord(reaction) == null || typeof asRecord(reaction)!.emoji !== "string" || typeof asRecord(reaction)!.by !== "string"))) continue;
       entries.push(row as unknown as StoredEntry);
     }
@@ -78,26 +79,54 @@ export function createCoordinatorInferenceRouter(options: {
   };
   const emitTranscript = (agentId: string, type: "appended" | "updated", entry: Record<string, unknown>) => options.postEvent("transcript", { type, entry, agentId });
   const beginActivity = async (agentId: string): Promise<() => void> => {
-    try {
-      const remote = await options.dispatchRemote("listAgents", {});
-      if (!Array.isArray(remote)) return () => {};
-      const project = (isRunning: boolean) => remote.map(raw => {
-        const row = asRecord(raw);
-        if (row?.id !== agentId) return raw;
-        return { ...row, isRunning, isRunningTurn: isRunning, isComposingMessage: isRunning, isRetrying: false, ...(isRunning ? { currentActivity: { kind: "thinking" } } : { currentActivity: undefined }) };
-      });
-      const publishRunning = () => options.postEvent("agents", { activeAgentId: agentId, agents: project(true) });
-      publishRunning();
-      // Transcript refreshes can fetch the remote (idle) roster while a local CLI turn is
-      // running. Pulse the locally authoritative state until the turn settles so those
-      // refreshes cannot permanently erase the polished renderer's activity surface.
-      const pulse = setInterval(publishRunning, 250);
-      pulse.unref();
-      return () => {
-        clearInterval(pulse);
-        options.postEvent("agents", { activeAgentId: agentId, agents: project(false) });
-      };
-    } catch { return () => {}; }
+    let stopped = false;
+    const publish = async (isRunning: boolean): Promise<void> => {
+      if (stopped && isRunning) return;
+      try {
+        const remote = await options.dispatchRemote("listAgents", {});
+        if (!Array.isArray(remote)) return;
+        // Re-fetch on every pulse so a rename (or any other roster edit) that lands
+        // mid-turn is not overwritten by the stale snapshot taken at turn start.
+        const agents = remote.map((raw) => {
+          const row = asRecord(raw);
+          if (row?.id !== agentId) return raw;
+          if (!isRunning) {
+            return {
+              ...row,
+              isRunning: false,
+              isRunningTurn: false,
+              isComposingMessage: false,
+              isRetrying: false,
+              currentActivity: null,
+            };
+          }
+          return {
+            ...row,
+            isRunning: true,
+            isRunningTurn: true,
+            isComposingMessage: true,
+            isRetrying: false,
+            currentActivity: { kind: "thinking" },
+          };
+        });
+        options.postEvent("agents", { activeAgentId: agentId, agents });
+      } catch {
+        // A single listAgents failure must not permanently blank the activity surface.
+      }
+    };
+    await publish(true);
+    // Transcript refreshes can fetch the remote (idle) roster while a local CLI turn is
+    // running. Pulse the locally authoritative state until the turn settles so those
+    // refreshes cannot permanently erase the polished renderer's activity surface.
+    const pulse = setInterval(() => {
+      void publish(true);
+    }, 250);
+    pulse.unref();
+    return () => {
+      stopped = true;
+      clearInterval(pulse);
+      void publish(false);
+    };
   };
   const toggleLocalReaction = async (agentId: string, entryId: string, emoji: string): Promise<Record<string, unknown> | null> => {
     const trimmed = emoji.trim();
@@ -163,19 +192,23 @@ export function createCoordinatorInferenceRouter(options: {
       listTools: () => options.dispatchRemote("listRoutedMcpTools", {}),
       callTool: tool => options.dispatchRemote("executeRoutedMcpTool", { ...tool, agentId }),
     }) : null;
-    const directTools = bridge == null ? await options.dispatchRemote("listRoutedMcpTools", {}) : undefined;
-    const tools = Array.isArray(directTools) ? directTools as Record<string, any>[] : undefined;
+    const tools = bridge == null
+      ? withRoutedShellTools(await options.dispatchRemote("listRoutedMcpTools", {}) as Record<string, unknown>[] | undefined)
+      : undefined;
     const onTextDelta = (_delta: string, accumulated: string) => emitAssistant(accumulated, true);
     try { content = await runRoutedProviderText(provider, messages, bridge == null ? {
-      ...(tools === undefined ? {} : { tools }),
-      executeTool: async (definition, toolArgs, toolCallId) => await options.dispatchRemote("executeRoutedMcpTool", {
-        providerIdentifier: definition.providerIdentifier,
-        name: definition.name,
-        toolName: definition.toolName,
-        args: toolArgs,
-        toolCallId,
-        agentId,
-      }),
+      tools,
+      executeTool: async (definition, toolArgs, toolCallId) => {
+        if (isRoutedShellTool(definition)) return await executeRoutedShell(toolArgs);
+        return await options.dispatchRemote("executeRoutedMcpTool", {
+          providerIdentifier: definition.providerIdentifier,
+          name: definition.name,
+          toolName: definition.toolName,
+          args: toolArgs,
+          toolCallId,
+          agentId,
+        });
+      },
       onTextDelta,
     } : { mcpServerUrl: bridge.url, onTextDelta }); }
     finally { endActivity(); await bridge?.close(); }

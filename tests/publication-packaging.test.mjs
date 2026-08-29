@@ -97,6 +97,8 @@ test("Router settings use the trusted backend and display recorded inference usa
   assert.match(providers, /tools: mcpServerUrl == null \? \[\] : \["mcp__grok_bot_plugins__\*"\]/);
   assert.match(providers, /https:\/\/openrouter\.ai\/api\/v1/);
   assert.match(providers, /OpenRouter needs OPENROUTER_API_KEY/);
+  assert.match(providers, /https:\/\/inference\.baseten\.co\/v1/);
+  assert.match(providers, /Baseten needs BASETEN_API_KEY/);
   assert.match(cursorSession, /routedProvider !== "cursor"/);
   assert.match(cursorSession, /createProviderPromptSession\(routedProvider\)/);
   assert.match(cursorBackend, /routedProvider !== "cursor"/);
@@ -124,6 +126,8 @@ test("Router settings use the trusted backend and display recorded inference usa
   assert.match(coordinator, /createRoutedMcpBridge/);
   assert.match(coordinator, /listRoutedMcpTools/);
   assert.match(coordinator, /executeRoutedMcpTool/);
+  assert.match(coordinator, /withRoutedShellTools/);
+  assert.match(coordinator, /executeRoutedShell/);
   assert.match(mcpBridge, /server\.listen\(0, "127\.0\.0\.1"/);
   assert.match(mcpBridge, /readOnlyHint: readOnly/);
   assert.match(mcpBridge, /request\.url !== `\/mcp\/\$\{secret\}`/);

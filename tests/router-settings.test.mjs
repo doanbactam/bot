@@ -17,7 +17,7 @@ async function loadRouterModule() {
 
 test("router provider preference defaults to OpenRouter and round-trips every provider", async () => {
   const router = await loadRouterModule();
-  assert.deepEqual(router.ROUTER_PROVIDERS.map(({ id }) => id), ["openrouter", "cursor", "claude-code", "codex"]);
+  assert.deepEqual(router.ROUTER_PROVIDERS.map(({ id }) => id), ["openrouter", "baseten", "cursor", "claude-code", "codex"]);
   assert.equal(router.DEFAULT_ROUTER_PROVIDER, "openrouter");
   assert.equal(router.parseRouterProviderPreference(null), "openrouter");
   assert.equal(router.parseRouterProviderPreference("not-json"), "openrouter");

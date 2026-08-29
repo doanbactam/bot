@@ -497,16 +497,26 @@ export class AgentLifecycle {
   }
 
   async updateAgent(agentId: string, profile: any): Promise<unknown> {
+    // Sidebar rename often sends `{ name }` with a missing/undefined description.
+    // Coerce against the on-disk profile so `.trim()` never throws and rename stays stable.
+    const existing = this.tm.sessionStore.getAgentProfileText(agentId);
+    const name =
+      typeof profile?.name === "string" ? profile.name.trim() : (existing?.name ?? "");
+    const description =
+      typeof profile?.description === "string"
+        ? profile.description.trim()
+        : (existing?.description ?? "");
+    if (name.length === 0) throw new Error("Agent name cannot be empty");
     const trimmed = {
-      ...(profile.avatarShape === undefined
-        ? {}
-        : { avatarShape: profile.avatarShape.trim() }),
-      ...(profile.avatarColor === undefined
-        ? {}
-        : { avatarColor: profile.avatarColor.trim() }),
-      name: profile.name.trim(),
-      description: profile.description.trim(),
-      ...(profile.title === undefined ? {} : { title: profile.title.trim() }),
+      ...(typeof profile?.avatarShape === "string"
+        ? { avatarShape: profile.avatarShape.trim() }
+        : {}),
+      ...(typeof profile?.avatarColor === "string"
+        ? { avatarColor: profile.avatarColor.trim() }
+        : {}),
+      name,
+      description,
+      ...(typeof profile?.title === "string" ? { title: profile.title.trim() } : {}),
     };
     const stamp = this.tm.roster.reserveSnapshotStamp();
     const active = this.tm.sessions.activeSession;

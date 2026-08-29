@@ -9,6 +9,7 @@ import type { SandSettingsStore } from "../../shared/node/settings/sand-settings
 import type { RecreateResult } from "./box-recreate-commands.js";
 import type { SandRemoteHostConnector } from "./box-host-connector.js";
 import type { GatewayConnection } from "./gateway-descriptor-cache.js";
+import { LOCAL_DOCKER_INDEPENDENT_ACCESS_TOKEN } from "../../shared/local-docker-independent-credential.js";
 
 export const LOCAL_DOCKER_BOX_IMAGE = "public.ecr.aws/k0i0n2g5/cursorenvironments/universal:sand-box-latest";
 export const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
@@ -252,6 +253,15 @@ export async function stopLocalDockerBox(): Promise<void> {
   if (!stopped.ok) throw new Error(`Could not stop the local Docker VM: ${stopped.output}`);
 }
 
+/** Independent local-docker has no Cursor short-lived creds; seed a long-lived file so the in-box renewer stops waiting forever. */
+export function localDockerIndependentInferenceCredential(): InferenceCredential {
+  return {
+    accessToken: LOCAL_DOCKER_INDEPENDENT_ACCESS_TOKEN,
+    backendUrl: "http://127.0.0.1:9",
+    expiresAtMs: Date.now() + 365 * 24 * 60 * 60 * 1_000,
+  };
+}
+
 export function createSettingsRoutedHostConnector(
   remote: SandRemoteHostConnector,
   settings: SandSettingsStore,
@@ -262,7 +272,10 @@ export function createSettingsRoutedHostConnector(
         remote.issueInferenceCredential(),
         new Promise<undefined>((resolve) => setTimeout(resolve, OPTIONAL_CREDENTIAL_TIMEOUT_MS)),
       ]);
-      return await ensureLocalDockerBox(settings.settingsPath, issued);
+      return await ensureLocalDockerBox(
+        settings.settingsPath,
+        issued ?? localDockerIndependentInferenceCredential(),
+      );
     })().finally(() => { ensureInFlight = undefined; });
     return ensureInFlight;
   };

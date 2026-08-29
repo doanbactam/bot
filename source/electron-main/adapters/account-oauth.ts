@@ -1,23 +1,49 @@
-import { createCursorAuthWiring, reportedAuthStatus, type AuthServicePort } from "../account/cursor-auth-wiring.js";
+import { createCursorAuthWiring, reportedAuthStatus, LOCAL_ACCOUNT_AUTH_ID, type AuthServicePort } from "../account/cursor-auth-wiring.js";
 import type { SandAuthStatus } from "../account/cursor-auth.js";
 import type { ElectronProductionAdapterBindings } from "../production-adapters.js";
 import type { ProductionAccountService, ProductionServiceContext } from "../main-production-services.js";
+import { accountCacheScope } from "../../shared/node/cursor-token.js";
 import { requireFunction, requireObject } from "./provider-guards.js";
 
 type CursorAuthWiringDeps = Parameters<typeof createCursorAuthWiring>[0];
 
 /**
- * Cursor credentials are only necessary when inference routes through Cursor.
- * With any other provider (the OpenRouter default, Claude Code, Codex) the app
- * runs without a Cursor session, so a missing session is reported as a local
- * account instead of a blocking sign-out.
+ * Reconstruction policy: the shell never blocks on Cursor sign-in.
+ * OpenRouter/Baseten/Claude Code/Codex all run without a Cursor session.
+ * Cursor tokens are only demanded later, when a turn actually routes through
+ * the Cursor provider — not as a gate to open the app.
+ *
+ * Opt back into the upstream gate with SAND_REQUIRE_CURSOR_AUTH=1.
  */
 export function isCursorAuthRequiredFor(context: Pick<ProductionServiceContext, "settings">): boolean {
+  if (process.env.SAND_REQUIRE_CURSOR_AUTH === "1") {
+    try {
+      return context.settings.settingsStore.getInferenceProvider() === "cursor";
+    } catch {
+      return true;
+    }
+  }
+  return false;
+}
+
+/** Apply independent-mode defaults when a synthetic local account is active. */
+export function ensureIndependentLocalDefaults(context: Pick<ProductionServiceContext, "settings">): void {
   try {
-    return context.settings.settingsStore.getInferenceProvider() === "cursor";
+    const store = context.settings.settingsStore;
+    // Secrets upsert requires an account scope. Scope the local synthetic
+    // account immediately so Router API key saves do not race coordinator auth.
+    store.scopeToAccount(accountCacheScope(LOCAL_ACCOUNT_AUTH_ID));
+    if (store.getInferenceProvider() === "cursor") {
+      store.setInferenceProvider("openrouter");
+    }
+    if (store.getBoxRuntime() !== "local-docker") {
+      store.setBoxRuntime("local-docker");
+    }
+    if (store.getHasSeenOnboarding() !== true) {
+      store.setHasSeenOnboarding(true);
+    }
   } catch {
-    // Fail toward the real upstream behavior: demand the session.
-    return true;
+    // Settings may not be ready during early bootstrap; auth reporting still works.
   }
 }
 
@@ -47,7 +73,12 @@ function defaultWiringDeps(context: ProductionServiceContext): CursorAuthWiringD
   return {
     openExternal: async (url) => { await context.native.shell.openExternal(url); },
     getAccountRuntime: () => accountRuntimeOf(context),
-    emitAuthStatus: (status) => context.requireMainEdge().emit("cursor-auth-changed", status),
+    emitAuthStatus: (status) => {
+      if (status.kind === "logged-in" && status.authId === LOCAL_ACCOUNT_AUTH_ID) {
+        ensureIndependentLocalDefaults(context);
+      }
+      context.requireMainEdge().emit("cursor-auth-changed", status);
+    },
     isCursorAuthRequired: () => isCursorAuthRequiredFor(context),
     sentryEnabled: context.env.SAND_DISABLE_SENTRY !== "1",
     settingsStore: context.settings.settingsStore,
@@ -76,8 +107,13 @@ export function createProductionAccountOAuthAdapter(
       const wiring = createCursorAuthWiring((ports?.resolveWiringDeps ?? defaultWiringDeps)(context));
       const service = validateAuthService(await wiring.ensureCursorAuthService());
       const isCursorAuthRequired = () => isCursorAuthRequiredFor(context);
-      const reportedGetStatus = async (): Promise<SandAuthStatus> =>
-        reportedAuthStatus(await service.getStatus(), isCursorAuthRequired());
+      const reportedGetStatus = async (): Promise<SandAuthStatus> => {
+        const reported = reportedAuthStatus(await service.getStatus(), isCursorAuthRequired());
+        if (reported.kind === "logged-in" && reported.authId === LOCAL_ACCOUNT_AUTH_ID) {
+          ensureIndependentLocalDefaults(context);
+        }
+        return reported;
+      };
       const subscriptions = new Set<() => void>();
       let disposed = false;
       return {

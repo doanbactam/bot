@@ -180,6 +180,23 @@ export function projectRendererAgents(value: unknown, now = Date.now()): Rendere
     .sort((left, right) => right.updatedAt - left.updatedAt);
 }
 
+export function agentsPayloadFromCoordinatorEvent(value: unknown): unknown[] | null {
+  if (Array.isArray(value)) return value;
+  if (isRecord(value) && Array.isArray(value.agents)) return value.agents;
+  return null;
+}
+
+export function activeAgentIdFromCoordinatorEvent(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const activeAgentId = value.activeAgentId;
+  return typeof activeAgentId === "string" && activeAgentId.length > 0 ? activeAgentId : null;
+}
+
+export function agentPayloadFromCoordinatorUpsertEvent(value: unknown): unknown {
+  if (isRecord(value) && "agent" in value) return value.agent;
+  return value;
+}
+
 function attachmentFromEntry(entry: Record<string, unknown>): DraftAttachment | null {
   const path = stringValue(entry.path ?? entry.url ?? entry.source);
   if (path == null) return null;

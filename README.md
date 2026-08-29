@@ -13,7 +13,7 @@ application (and, experimentally, a linux-x64 application directory).
 
 It also adds a few practical experiments:
 
-- an inference router for Cursor, Claude Code, Codex, and OpenRouter;
+- an inference router for Cursor, Claude Code, Codex, OpenRouter, and Baseten;
 - Grok Bot plugin/MCP tools across the routed providers;
 - local usage tracking for routed inference;
 - an optional local Docker sandbox in place of the remote box; and
@@ -88,6 +88,7 @@ Open **Settings → Router** to choose the backend used for new turns:
 | Claude Code | Existing Claude Code login | Routed Grok Bot MCP tools |
 | Codex | Existing local ChatGPT/Codex login | Direct Responses transport with Grok Bot tools |
 | OpenRouter | API key saved through the desktop secrets bridge | Grok Bot tool-execution loop |
+| Baseten | API key saved through the desktop secrets bridge | Grok Bot tool-execution loop |
 
 OpenRouter is the default, so the app runs independently of any Cursor login:
 saving an OpenRouter API key (or exporting `OPENROUTER_API_KEY`) is the only
@@ -154,7 +155,7 @@ Linux packaging (`npm run package:linux`, linux-x64):
   p7zip `7za`/`7z` builds predate APFS support and will not work)
 - Git LFS
 - Docker (optional, only for the local sandbox)
-- an OpenRouter API key for inference (Cursor, Claude Code, and Codex remain
+- an OpenRouter or Baseten API key for inference (Cursor, Claude Code, and Codex remain
   selectable when their local clients are authenticated)
 
 ## Quick start

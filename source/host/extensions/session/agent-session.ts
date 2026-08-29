@@ -95,7 +95,7 @@ export class SandAgentSessionStore {
   agentDirExists(agentId: string): boolean { return existsSync(this.getAgentDir(agentId)); }
   writeAgentProfileFile(agentId: string, profile: Partial<SandAgentProfile> & { name: string; description: string }): void {
     const path = getSandProfilePath(this.getAgentDir(agentId)), current = readSandProfileFile(path), name = resolveProfileName(profile.name.trim(), current);
-    writeSandProfileFile(path, { name, description: profile.description.trim(), title: profile.title?.trim() ?? current?.title ?? "", avatarShape: profile.avatarShape?.trim() ?? current?.avatarShape ?? "", avatarColor: profile.avatarColor?.trim() ?? current?.avatarColor ?? "" });
+    writeSandProfileFile(path, { name, description: (typeof profile.description === "string" ? profile.description : current?.description ?? "").trim(), title: profile.title?.trim() ?? current?.title ?? "", avatarShape: profile.avatarShape?.trim() ?? current?.avatarShape ?? "", avatarColor: profile.avatarColor?.trim() ?? current?.avatarColor ?? "" });
   }
   async withAgentDb<T>(agentId: string, fn: (db: SandAgentDb, dbPath: string) => T | Promise<T>): Promise<T> { const dbPath = getAgentDbPath(this.rootDir, agentId), db = new SandAgentDb(dbPath); try { return await fn(db, dbPath); } finally { db.close(); } }
 

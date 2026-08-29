@@ -578,6 +578,13 @@ export class SandHost {
   }
 
   async kickstartIfPending(agentId: string): Promise<boolean> {
+    // Desktop inference-router owns first-turn chat for non-Cursor providers.
+    // Starting an in-box kickstart there races the router and can leave isBusy stuck.
+    const provider = optionalMethod(
+      this.requireHostExtensions().api("settings"),
+      "getInferenceProvider",
+    )?.();
+    if (provider != null && provider !== "cursor") return false;
     const inferenceReady = await optionalMethod(
       this.requireHostExtensions().api("inference"),
       "isReady"
