@@ -1,5 +1,6 @@
 import type { ProductionCoordinatorClient } from "../../../../production/coordinator-client";
 import type { AgentDesktopBridge } from "../../../contracts/desktop-bridge";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5648809
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5642220
@@ -53,9 +54,6 @@ export interface RosterSnapshotStore {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;

@@ -1,4 +1,5 @@
 import type { RawPortCoordinatorSource } from "../recovered/runtime/coordinator-source";
+import { isRecord } from "../recovered/runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L523
 
@@ -32,9 +33,6 @@ export interface CommandPaletteRoutineProvider {
 
 type RoutineSource = Pick<RawPortCoordinatorSource, "listAllAutomations">;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isTimestamp(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);

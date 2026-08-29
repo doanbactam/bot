@@ -1,4 +1,5 @@
 import type { RawPortCoordinatorSource } from "../../../runtime/coordinator-source";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L1
 // The immutable Agent-info Channels tab uses the channels resource and these
@@ -53,9 +54,6 @@ export interface AgentInfoChannelsSnapshot {
 
 export type AgentInfoChannelsOperation = "connect" | "disconnect" | "refresh";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function channelManifest(value: unknown): AgentInfoChannelManifest | null {
   if (!isRecord(value)) return null;

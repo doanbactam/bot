@@ -1,5 +1,6 @@
 import type { ProductionCoordinatorClient } from "../../../../production/coordinator-client";
 import type { GroupRosterSource, GroupRosterSourceSnapshot } from "./model";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=2731003 (shipped group member action calls setGroupMembers; UTF-8 offset; SHA256 ef4e9831b65d39633f09c9ad0c083b98b7ebf52e3bb558182aee5bde31f876fa)
 // @evidence src/app/dist/host/host-main.cjs#byteOffset=17926213 (shipped host dispatches setGroupMembers through the RPC gateway; UTF-8 offset; SHA256 b0e529081dd0f7fe4b162eebdf8f796aff99b287cc47ee3e48a1c86c332025cc)
@@ -11,9 +12,6 @@ export interface SetGroupMembersArgs {
 
 export type SetGroupMembersReply = Record<string, unknown> | null;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isSetGroupMembersArgs(value: SetGroupMembersArgs): boolean {
   return value.id.length > 0 && value.memberAgentIds.every((id) => id.length > 0);

@@ -2,6 +2,7 @@ import type { CloudAgentInfo, CloudAgentProvider, CloudAgentWatcher } from "../c
 import type { TranscriptCardEntry } from "../cards/transcript-card/protocol";
 import type { ConversationTranscriptEntry, TranscriptMessage } from "./model";
 import type { PromptEditorPrReference } from "./rich-text-editor";
+import { isRecord } from "../../../runtime/is-record";
 
 // Immutable PR candidate projection:
 // Mac index-UbX-y3il.js SHA-256 ef4e9831b65d39633f09c9ad0c083b98b7ebf52e3bb558182aee5bde31f876fa:
@@ -46,9 +47,6 @@ export interface EditorPrReferenceProvider {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function positiveNumber(value: unknown): number | null {
   const number = typeof value === "number" ? value : typeof value === "string" && VALID_NUMBER.test(value) ? Number(value) : NaN;

@@ -1,4 +1,5 @@
 import type { TranscriptCardScope } from "./protocol";
+import { isRecord } from "../../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5590234 (cloud-agent watcher/poll provider)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5567167 (getCloudAgentInfo coordinator contract)
@@ -69,9 +70,6 @@ export interface CloudAgentProviderOptions {
 
 const terminalStatuses = new Set<CloudAgentStatus>(["finished", "error", "expired"]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function optionalString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;

@@ -6,6 +6,7 @@ import {
   type CoordinatorTranscriptWindowRequest,
   type CoordinatorTranscriptWindowResponse
 } from "../../../source/shared/rpc/coordinator";
+import { isRecord } from "../recovered/runtime/is-record";
 
 export const COORDINATOR_PROTOCOL_VERSION = 1;
 export const COORDINATOR_TRANSPORT_STATE_FAMILY = "coordinator-transport-state";
@@ -26,9 +27,6 @@ export class CoordinatorCallError extends Error {
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function validateReply(method: string, value: unknown): unknown {
   if (method === "getAgentTranscriptWindow" || method === "getAgentThread") return validateCoordinatorReply(method, value);

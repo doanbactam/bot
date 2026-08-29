@@ -16,7 +16,7 @@ import { projectUserAttachmentEvent, type UserAttachmentGalleryProjection } from
 import { projectSendMessageText, type SendMessageTextAdjacency } from "../recovered/features/conversation/cards/transcript-card/send-message-text";
 import { projectTimelineEvent } from "../recovered/features/conversation/cards/timeline-event-registry";
 import { projectTranscriptReactions } from "../recovered/features/conversation/cards/transcript-card/reaction-actions";
-import type { TranscriptThreadSummary } from "../recovered/features/conversation/cards/transcript-card/thread-summary-controller";
+import type { TranscriptThreadSummary } from "../recovered/features/conversation/cards/transcript-card/thread-summary";
 
 export type { DeepLinkInfo } from "../recovered/features/deep-links/overlay/model";
 

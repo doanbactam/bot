@@ -1,4 +1,5 @@
 import type { RawPortCoordinatorSource } from "../recovered/runtime/coordinator-source";
+import { isRecord } from "../recovered/runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5508686
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5504500
@@ -35,9 +36,6 @@ export interface CommandPaletteMessageProvider {
 
 type MessageSource = Pick<RawPortCoordinatorSource, "searchAgents">;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isFiniteNumber(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);

@@ -8,6 +8,7 @@
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5577380 (deleteAgentAutomation)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5577432 (runAgentAutomationNow)
 
+import { isRecord } from "../../../runtime/is-record";
 export type RoutineRunStatus = "running" | "ok" | "error";
 
 export interface RoutineRun {
@@ -73,9 +74,6 @@ interface AgentState {
   snapshot: RoutineSnapshot;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseRun(value: unknown): RoutineRun | null {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.status !== "string" || typeof value.startedAt !== "number") return null;

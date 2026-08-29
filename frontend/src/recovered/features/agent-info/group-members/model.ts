@@ -1,4 +1,5 @@
 import type { AppAlertController, AppAlertRequest } from "../../window-chrome/app-alert/controller";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=2291345 (non-shared group gate)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=2723358 (F2n removal request)
@@ -52,9 +53,6 @@ export interface GroupMembersProvider {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function stringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string" && item.length > 0);

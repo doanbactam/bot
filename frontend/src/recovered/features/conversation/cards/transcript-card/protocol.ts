@@ -4,6 +4,7 @@
 
 import { projectTranscriptReactions, type TranscriptReaction } from "./reaction-actions";
 import { projectSendMessageText, type SendMessageTextImage } from "./send-message-text";
+import { isRecord } from "../../../../runtime/is-record";
 
 export const TRANSCRIPT_CARD_ENTRY_KIND = "send-message" as const;
 
@@ -219,9 +220,6 @@ export interface TranscriptCardPageProjection {
   rejectedCount: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;

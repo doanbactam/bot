@@ -1,5 +1,5 @@
 import { type ReactNode } from "react";
-import type { TranscriptThreadSummary } from "./thread-summary-controller";
+import type { TranscriptThreadSummary } from "./thread-summary";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5080561 (View thread copy/label)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5080586 (sand-thread-affordance)

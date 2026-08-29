@@ -1,4 +1,5 @@
 import type { CursorAccountDesktopBridge, DesktopBridge } from "../../../contracts/desktop-bridge";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L518
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L523
@@ -41,9 +42,6 @@ const ACCESS_REASONS: ReadonlySet<string> = new Set([
   "unspecified"
 ]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function isSandAccess(value: unknown): value is SandAccess {
   if (!isRecord(value) || typeof value.state !== "string" || typeof value.reason !== "string") return false;

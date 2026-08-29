@@ -1,4 +1,5 @@
 import type { CoordinatorSourceEventListener, RawPortCoordinatorSource } from "../../../runtime/coordinator-source";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=2291210 (title availability)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=2766045 (Agent Settings fields and notification toggle)
@@ -33,9 +34,6 @@ export interface AgentSettingsSnapshot {
   readonly generation: number;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;

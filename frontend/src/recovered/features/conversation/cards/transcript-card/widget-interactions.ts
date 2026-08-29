@@ -1,4 +1,5 @@
 import type { TranscriptCardEntry, TranscriptCardScope } from "./protocol";
+import { isRecord } from "../../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=824822 (respondToWidget/dismissWidget interaction provider)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5712387 (transcript action forwarding)
@@ -28,9 +29,6 @@ export interface WidgetInteractionCallSource {
   call(method: string, args?: unknown): Promise<unknown>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function actionReply(value: unknown, method: string): WidgetActionReply | null {
   if (value == null) return null;

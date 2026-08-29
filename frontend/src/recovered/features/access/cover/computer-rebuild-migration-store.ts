@@ -5,6 +5,7 @@ import {
   type ComputerRebuildOperationId,
   type ComputerRebuildState
 } from "./computer-rebuild-model";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=805443
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=806140
@@ -42,9 +43,6 @@ export interface ComputerRebuildMigrationStore {
 
 const PHASES: ReadonlySet<string> = new Set(["backing-up", "creating", "moving", "cleaning-up", "wiping", "done", "failed"]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function operationId(value: unknown): ComputerRebuildOperationId | null {
   if (value === null) return null;

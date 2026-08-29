@@ -16,7 +16,7 @@ import {
 import type { TranscriptCardEntry } from "./protocol";
 import { classifySendMessageTextUrl } from "./send-message-text";
 import type { TranscriptMessage } from "../../workspace/model";
-import type { TranscriptThreadSummary } from "./thread-summary-controller";
+import type { TranscriptThreadSummary } from "./thread-summary";
 import { ThreadAffordance } from "./thread-affordance";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5084871 (message action eligibility/labels)

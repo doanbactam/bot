@@ -3,6 +3,7 @@
 // @evidence src/app/dist/renderer/assets/view-3mdFcnEj.js#byteOffset=1515 (listener card projection)
 // @evidence src/app/dist/renderer/assets/view-3mdFcnEj.js#byteOffset=1732 (connectPlatform action)
 
+import { isRecord } from "../../../../runtime/is-record";
 export type ListenerPlatform = "github" | "slack";
 
 export interface ListenerIntegration {
@@ -57,9 +58,6 @@ export interface ListenerIntegrationsProviderOptions {
 const DEFAULT_POLL_MS = 5_000;
 const EMPTY_VIEW: ListenerIntegrationsView = { integrations: [] };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function projectPlatform(value: unknown): ListenerPlatform | null {
   return value === "github" || value === "slack" ? value : null;

@@ -1,5 +1,6 @@
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L520
 
+import { isRecord } from "../../../runtime/is-record";
 export const VNC_VIEWER_VISIBLE_CHANNEL = "sand:vnc-viewer-visible";
 export const VNC_HOST_KEY_CHANNEL = "sand:vnc-host-key";
 export const VNC_SESSION_CHANNEL = "sand:vnc-session";
@@ -80,9 +81,6 @@ export interface ComputerCursorPresentation {
   press: { key: number; delayMs: number } | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isNonnegativeFinite(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0;

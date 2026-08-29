@@ -1,4 +1,5 @@
 import type { RawPortCoordinatorSource } from "../../../runtime/coordinator-source";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/view-B5Ug8wEm.js#byteOffset=24286 (plugin-auth purpose and exact setup prompt)
 // @evidence recovered/frontend/app/assets/view-B5Ug8wEm.js#byteOffset=30233 (Windows plugin-auth purpose and exact setup prompt)
@@ -20,9 +21,6 @@ export interface PluginAuthBlock {
   readonly marketplaceName?: string;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parsePluginAuthBlock(value: unknown): PluginAuthBlock | null {
   if (!isRecord(value) || typeof value.pluginId !== "string" || value.pluginId.length === 0 || typeof value.pluginName !== "string" || value.pluginName.length === 0) return null;

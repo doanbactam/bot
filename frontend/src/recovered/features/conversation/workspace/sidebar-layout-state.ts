@@ -1,4 +1,5 @@
 import { createSnapshotStore, type SnapshotStore } from "../../../runtime/snapshot-store";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L47838
 // ui-layout slice metadata, sidebar defaults/bounds, and legacy persistence keys.
@@ -84,9 +85,6 @@ export interface UiLayoutStateStore {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function finiteNumber(value: unknown, fallback: number): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;

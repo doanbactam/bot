@@ -3,6 +3,7 @@
 // @evidence recovered/frontend/app/assets/index-UbX-y3il.js#byteOffset=7007341 (NPe keyed async-task snapshot store; SHA256 80464803b50f478598080bdc1b91da3996c6b74168e2351ea26f620f2ec62ba5)
 // @evidence recovered/frontend/app/assets/index-UbX-y3il.js#byteOffset=7009813 (i$n getAsyncTasks provider binding; SHA256 80464803b50f478598080bdc1b91da3996c6b74168e2351ea26f620f2ec62ba5)
 
+import { isRecord } from "../../../runtime/is-record";
 export type AsyncTaskKind = "subagent" | "shell" | "cloud-agent";
 
 export interface AsyncTask {
@@ -56,9 +57,6 @@ const LOADING: AsyncTasksSnapshot = { status: "loading" };
 const EMPTY: AsyncTasksSnapshot = { status: "empty" };
 const CAPABILITY_UNAVAILABLE = "source/capability-unavailable";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function parseTask(value: unknown): AsyncTask | null {
   if (!isRecord(value)) return null;

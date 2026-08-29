@@ -1,4 +1,5 @@
 import { extractSendMessageTextLink, type LinkMetadataResource } from "./url-card";
+import { isRecord } from "../../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/view-BuhxMXKm.js#byteOffset=0 (send-message:text projector consumer)
 // @evidence src/app/dist/renderer/assets/view-BuhxMXKm.js#byteOffset=267 (content/images/streaming guards)
@@ -66,9 +67,6 @@ export interface InvalidSendMessageText {
 
 export type SendMessageTextProjectionResult = SendMessageTextProjection | InvalidSendMessageText;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;

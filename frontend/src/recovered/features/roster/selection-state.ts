@@ -1,4 +1,5 @@
 import type { AgentDesktopBridge } from "../../contracts/desktop-bridge";
+import { isRecord } from "../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=777400 (selection.last-agent client slice)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=817849 (selection initial state and load-pending bit)
@@ -41,9 +42,6 @@ export interface RosterSelectionStore {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function encodeAccountSlot(accountSlot: string): string {
   return encodeURIComponent(accountSlot).replaceAll(".", "%2E");

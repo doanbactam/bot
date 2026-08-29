@@ -4,6 +4,7 @@ import {
   type ComputerRebuildState
 } from "./computer-rebuild-model";
 import type { ProductionCoordinatorClient } from "../../../../production/coordinator-client";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=4864159
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5603486
@@ -37,9 +38,6 @@ export interface ComputerRebuildBoxStore {
   dispose(): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function parseForeverBoxStatus(value: unknown): ForeverBoxStatus | null {
   if (!isRecord(value) || typeof value.agentId !== "string" || value.agentId.length === 0 || typeof value.state !== "string") return null;

@@ -1,5 +1,6 @@
 import type { AgentDesktopBridge } from "../../../contracts/desktop-bridge";
 import { areComposerDraftsEqual, parseComposerDraft, type ComposerDraft } from "./model";
+import { isRecord } from "../../../runtime/is-record";
 
 // Immutable root: ef4e9831b65d39633f09c9ad0c083b98b7ebf52e3bb558182aee5bde31f876fa
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=4769359 (composer-drafts slice metadata)
@@ -50,9 +51,6 @@ export interface ComposerDraftStateStore {
 const EMPTY_SNAPSHOT: ComposerDraftSnapshot = { draft: null, recovery: null };
 const EMPTY_RECORD = { draft: null, draftId: null, recovery: null } as const;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function encodeAccountSlot(accountSlot: string): string {
   return encodeURIComponent(accountSlot).replaceAll(".", "%2E");

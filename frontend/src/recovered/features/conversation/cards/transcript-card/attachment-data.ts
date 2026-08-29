@@ -1,4 +1,5 @@
 import type { AttachmentMedia } from "../../../../contracts/desktop-bridge";
+import { isRecord } from "../../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/view-BKPMMMAd.js#byteOffset=1242 (box card state projection)
 // @evidence src/app/dist/renderer/assets/view-BKPMMMAd.js#byteOffset=4426 (attachment URL classification and card branches)
@@ -86,9 +87,6 @@ export interface UserAttachmentGalleryProjection {
 const imageExtensions = new Set([".avif", ".bmp", ".gif", ".ico", ".jpeg", ".jpg", ".png", ".svg", ".webp"]);
 const videoExtensions = new Set([".m4v", ".mov", ".mp4", ".ogv", ".webm"]);
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function extension(value: string): string {
   let pathname = value;

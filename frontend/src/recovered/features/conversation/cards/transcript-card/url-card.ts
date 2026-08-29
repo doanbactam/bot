@@ -1,4 +1,5 @@
 import type { DesktopBridge } from "../../../../contracts/desktop-bridge";
+import { isRecord } from "../../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5059259 (normalized HTTP URL helper)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=830042 (shared per-URL metadata provider)
@@ -50,9 +51,6 @@ export interface UrlCardProvider {
 
 export type UrlCardProviderSource = Pick<DesktopBridge, "getLinkMetadata" | "openExternal">;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;

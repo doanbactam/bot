@@ -16,6 +16,7 @@ import type { AutoReviewSettings } from "./auto-review";
 import type { AccountState, LocalToolPermission, LocalToolPermissionState } from "./panels";
 import type { UsageActionResult, UsageLoadState, UsageMeter } from "./panels";
 import { type EgressTunnelStatus } from "./updates";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#L20745-L20762
 function defaultAutoReviewSettings(): AutoReviewSettings {
@@ -55,9 +56,6 @@ export interface SettingsDesktopSubscriptions {
   egressTunnelStatus?(status: unknown): void;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function egressTunnelFeatureGateEnabled(snapshot: unknown): boolean {
   if (!isRecord(snapshot) || !isRecord(snapshot.featureGates)) return false;

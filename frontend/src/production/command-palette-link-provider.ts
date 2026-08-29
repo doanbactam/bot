@@ -1,4 +1,5 @@
 import type { DesktopBridge } from "../recovered/contracts/desktop-bridge";
+import { isRecord } from "../recovered/runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5058114
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=830042
@@ -36,9 +37,6 @@ export interface CommandPaletteLinkMetadataProvider {
 
 type LinkMetadataSource = Pick<DesktopBridge, "getLinkMetadata">;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function stringOrUndefined(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;

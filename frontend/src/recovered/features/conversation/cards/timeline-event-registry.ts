@@ -1,5 +1,6 @@
 import type { SandTimelineEvent } from "../../../../../../source/shared/sand-timeline-events";
 import { AUTOMATION_ACTION_VERB, describeTimelineEvent } from "../../../../../../source/shared/sand-timeline-events";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5102900 (channel-connected card metadata)
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5103038 (channel-disconnected card metadata)
@@ -48,9 +49,6 @@ export const TIMELINE_EVENT_REGISTRY: Readonly<Record<TimelineEventProtocolKey, 
   "event:automation-changed": metadata("automation-changed", "/src/electron-renderer/features/agents/cards/event/automation-changed/view.tsx", "view-BXS10NUs.js", "calendar"),
 });
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 export function projectTimelineEvent(value: unknown): TimelineEventData | null {
   if (!isRecord(value) || typeof value.type !== "string") return null;

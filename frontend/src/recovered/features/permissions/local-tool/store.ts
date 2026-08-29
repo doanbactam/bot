@@ -1,4 +1,5 @@
 import type { DesktopBridge, Unsubscribe } from "../../../contracts/desktop-bridge";
+import { isRecord } from "../../../runtime/is-record";
 
 // Immutable renderer root: ef4e9831b65d39633f09c9ad0c083b98b7ebf52e3bb558182aee5bde31f876fa
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js#byteOffset=5628893 (PUn controller)
@@ -43,9 +44,6 @@ const CAPABILITY_UNAVAILABLE = "desktop-source/capability-unavailable";
 const PERMISSION_LOADING: LocalToolPermissionSnapshot = { status: "loading" };
 const CEILING_LOADING: LocalToolPermissionCeilingSnapshot = { status: "loading" };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function failureCode(reason: unknown): string | null {
   if (!isRecord(reason)) return null;

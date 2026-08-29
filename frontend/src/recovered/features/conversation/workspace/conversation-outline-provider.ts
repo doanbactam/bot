@@ -3,6 +3,7 @@
 // @evidence recovered/frontend/app/assets/index-UbX-y3il.js#byteOffset=1096467 (WMt snapshotsFor/retain provider)
 // @evidence recovered/frontend/app/assets/index-UbX-y3il.js#byteOffset=6168984 (wSn full-conversation outline panel)
 
+import { isRecord } from "../../../runtime/is-record";
 export type ConversationOutlineMessage =
   | { readonly type: "text"; readonly content: string }
   | { readonly type: "attachment"; readonly url: string; readonly alt?: string };
@@ -91,9 +92,6 @@ const DEFAULT_SCHEDULER: ConversationOutlineScheduler = {
 
 const EMPTY_ITEMS: readonly ConversationOutlineItem[] = [];
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.length > 0;

@@ -28,7 +28,7 @@ import { ToolResultCard } from "../tool-results/view";
 import type { FindInChatTranscriptHandle } from "./find-in-chat-controller";
 import type { SendMessageTextImage } from "../cards/transcript-card/send-message-text";
 import { ThreadAffordance } from "../cards/transcript-card/thread-affordance";
-import type { TranscriptThreadSummary } from "../cards/transcript-card/thread-summary-controller";
+import type { TranscriptThreadSummary } from "../cards/transcript-card/thread-summary";
 
 function transcriptIds(id: string, hasTimestamp: boolean) {
   const base = `sand-conversation-entry-${encodeURIComponent(id)}`;

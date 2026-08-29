@@ -4,6 +4,7 @@ import {
   type EmojiCatalog,
   type EmojiEntry,
 } from "../cards/transcript-card/emoji-catalog";
+import { isRecord } from "../../../runtime/is-record";
 
 // Immutable prompt suggestion contracts:
 // Mac index-UbX-y3il.js (SHA-256 ef4e9831b65d39633f09c9ad0c083b98b7ebf52e3bb558182aee5bde31f876fa):
@@ -110,9 +111,6 @@ export interface EditorSuggestionController {
 
 const EVERYONE_ID = "__everyone__";
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;

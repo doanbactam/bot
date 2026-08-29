@@ -78,7 +78,7 @@ export const ELECTRON_PRODUCTION_AREA_EVIDENCE = Object.freeze({
     injectedPorts: ["electron.utilityProcess", "electron.MessageChannelMain", "dist/node-agent-coordinator/main.cjs"],
   },
   ipc: {
-    recoveredProviders: ["source/electron-main/prefs/settings-ipc.ts", "source/electron-main/experiments/experiments-ipc.ts", "source/electron-main/secrets/secrets-ipc.ts", "source/electron-main/mcp/mcp-desktop.ts", "source/electron-main/coordinator/production-provider.ts", "source/electron-main/production-ipc-contract.ts"],
+    recoveredProviders: ["source/electron-main/prefs/settings-ipc.ts", "source/electron-main/experiments/experiments-ipc.ts", "source/electron-main/secrets/secrets-ipc.ts", "source/electron-main/mcp/mcp-desktop.ts", "source/electron-main/coordinator/production-provider.ts"],
     injectedPorts: ["electron.ipcMain", "generated typed-RPC contract/transport"],
   },
 } as const);

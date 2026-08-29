@@ -1,4 +1,5 @@
 import type { AgentDesktopBridge, SidebarSection } from "../../../contracts/desktop-bridge";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js bytes 5684300-5689000
 // pKe/OHn/LHn/jHn: account-scoped sidebar.last-sections durable fallback,
@@ -143,9 +144,6 @@ interface SidebarSectionsStateOptions {
   readonly wait?: (delayMs: number) => Promise<void>;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function isSidebarSection(value: unknown): value is SidebarSection {
   if (!isRecord(value) || typeof value.id !== "string" || typeof value.name !== "string" || !Array.isArray(value.agentIds)) return false;

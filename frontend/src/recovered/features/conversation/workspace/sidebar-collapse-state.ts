@@ -1,5 +1,6 @@
 import type { AgentDesktopBridge } from "../../../contracts/desktop-bridge";
 import { createSnapshotStore } from "../../../runtime/snapshot-store";
+import { isRecord } from "../../../runtime/is-record";
 
 // @evidence src/app/dist/renderer/assets/index-UbX-y3il.js bytes 2219400-2221900
 // Iie/jFe/registry.register: account-sensitive client-slice keying and envelopes.
@@ -68,9 +69,6 @@ export const EMPTY_UI_AGENT_REFS_STATE: UiAgentRefsState = {
   emojiRecents: []
 };
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function stringArray(value: unknown, fallback: string[] = []): string[] {
   return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : fallback;
