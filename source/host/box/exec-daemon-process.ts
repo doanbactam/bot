@@ -79,6 +79,7 @@ export async function startBoxExecDaemonProcess(options: BoxExecDaemonProcessOpt
     env: {
       ...(options.env ?? process.env),
       SAND_BOX_EXEC_DAEMON_PORT: String(port),
+      SAND_BOX_EXEC_DAEMON_BIND_HOST: host,
       SAND_BOX_EXEC_DAEMON_AUTH_TOKEN: authToken,
       SAND_BOX_WORKSPACE_ROOT: options.workspaceRoot,
       SAND_BOX_TERMINALS_DIRECTORY: options.terminalsDirectory,

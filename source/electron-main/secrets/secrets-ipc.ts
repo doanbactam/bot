@@ -114,7 +114,7 @@ export function registerSecretsIpc(deps: {
   readonly ipcMain: SecretsIpcMain;
   readonly guards: ReturnType<typeof createTrustedSenderGuards>;
   readonly stores: {
-    readonly userSecretsStore: Pick<UserSecretsStore, "listKeys" | "isPersistent" | "reveal" | "upsert" | "remove">;
+    readonly userSecretsStore: Pick<UserSecretsStore, "listKeys" | "isPersistent" | "reveal" | "upsert" | "remove" | "exportSnapshot">;
     readonly clientPersistenceStore: Pick<SandClientPersistenceStore, "read" | "write" | "remove" | "listKeys" | "migrateFromLocalStorage">;
   };
   readonly pushBoxSecrets: () => Promise<boolean>;

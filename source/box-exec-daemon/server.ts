@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createServer, type Server } from "node:http";
 import { appendFile, lstat, mkdir, readFile, realpath, stat, writeFile } from "node:fs/promises";
@@ -78,9 +79,22 @@ const BoxExecService = {
 } as const satisfies ServiceType;
 
 export const BOX_EXEC_DAEMON_HOST = "127.0.0.1";
+export const BOX_EXEC_DAEMON_CONTAINER_BIND_HOST = "0.0.0.0";
 export const BOX_EXEC_DAEMON_PORT = 1337;
-export const BOX_EXEC_DAEMON_AUTH_TOKEN = "local";
+export const BOX_EXEC_DAEMON_BIND_HOST_ENV = "SAND_BOX_EXEC_DAEMON_BIND_HOST";
+export const BOX_EXEC_DAEMON_AUTH_TOKEN_ENV = "SAND_BOX_EXEC_DAEMON_AUTH_TOKEN";
 export const BOX_TERMINAL_VIRTUAL_PREFIX = "/root/.cursor/projects/workspace/terminals/";
+
+export function createBoxExecAuthToken(): string {
+  return randomBytes(32).toString("hex");
+}
+
+export function resolveBoxExecDaemonBindHost(requested: string | undefined): string {
+  const host = requested?.trim() || BOX_EXEC_DAEMON_HOST;
+  if (host === "127.0.0.1" || host === "localhost" || host === "::1") return BOX_EXEC_DAEMON_HOST;
+  if (host === BOX_EXEC_DAEMON_CONTAINER_BIND_HOST) return BOX_EXEC_DAEMON_CONTAINER_BIND_HOST;
+  throw new Error(`Refusing to bind box exec daemon to ${host}; only 127.0.0.1 and 0.0.0.0 are allowed`);
+}
 
 export interface BoxExecDaemonOptions {
   readonly host?: string;
@@ -448,9 +462,13 @@ function closeServer(server: Server): Promise<void> {
 }
 
 export async function startBoxExecDaemon(options: BoxExecDaemonOptions): Promise<BoxExecDaemonHandle> {
-  const host = options.host ?? BOX_EXEC_DAEMON_HOST;
+  const host = resolveBoxExecDaemonBindHost(options.host);
   const port = options.port ?? BOX_EXEC_DAEMON_PORT;
-  const authToken = options.authToken ?? BOX_EXEC_DAEMON_AUTH_TOKEN;
+  const requestedToken = options.authToken?.trim() ?? "";
+  if (host === BOX_EXEC_DAEMON_CONTAINER_BIND_HOST && requestedToken.length === 0) {
+    throw new Error("Box exec daemon refuses to bind 0.0.0.0 without an explicit auth token");
+  }
+  const authToken = requestedToken.length > 0 ? requestedToken : createBoxExecAuthToken();
   const requestedWorkspaceRoot = path.resolve(options.workspaceRoot);
   const requestedTerminalsDirectory = path.resolve(options.terminalsDirectory ?? path.join(tmpdir(), "sand-box-terminals"));
   await mkdir(requestedWorkspaceRoot, { recursive: true });
@@ -494,7 +512,7 @@ export async function startBoxExecDaemon(options: BoxExecDaemonOptions): Promise
   return {
     host,
     port: address.port,
-    url: `http://${host}:${address.port}`,
+    url: `http://${host === BOX_EXEC_DAEMON_CONTAINER_BIND_HOST ? BOX_EXEC_DAEMON_HOST : host}:${address.port}`,
     workspaceRoot,
     terminalsDirectory,
     ready,

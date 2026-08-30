@@ -6,7 +6,7 @@ import { runRoutedProviderText } from "../host/extensions/inference/provider-ses
 import type { SandInferenceProvider } from "../shared/inference-router.js";
 import { SandSettingsStore } from "../shared/node/settings/sand-settings-store.js";
 import { createRoutedMcpBridge } from "./routed-mcp-bridge.js";
-import { executeRoutedShell, isRoutedShellTool, withRoutedShellTools } from "./routed-shell.js";
+import { executeRoutedShell, isRoutedShellTool, loadRoutedShellTransport, withRoutedShellTools } from "./routed-shell.js";
 
 type StoredEntry = {
   readonly provider: Exclude<SandInferenceProvider, "cursor">;
@@ -197,9 +197,11 @@ export function createCoordinatorInferenceRouter(options: {
       : undefined;
     const onTextDelta = (_delta: string, accumulated: string) => emitAssistant(accumulated, true);
     try { content = await runRoutedProviderText(provider, messages, bridge == null ? {
-      tools,
+      ...(tools == null ? {} : { tools }),
       executeTool: async (definition, toolArgs, toolCallId) => {
-        if (isRoutedShellTool(definition)) return await executeRoutedShell(toolArgs);
+        if (isRoutedShellTool(definition)) {
+          return await executeRoutedShell(toolArgs, await loadRoutedShellTransport({ settingsPath: settings.settingsPath }));
+        }
         return await options.dispatchRemote("executeRoutedMcpTool", {
           providerIdentifier: definition.providerIdentifier,
           name: definition.name,
