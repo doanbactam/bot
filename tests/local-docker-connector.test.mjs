@@ -10,7 +10,7 @@ import { build } from "esbuild";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function loadConnectorModule() {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "grok-local-docker-connector-"));
+  const temporary = await mkdtemp(path.join(repoRoot, ".tmp-grok-local-docker-connector-"));
   const output = path.join(temporary, "local-docker-host-connector.mjs");
   await build({
     entryPoints: [path.join(repoRoot, "source/electron-main/box/local-docker-host-connector.ts")],
@@ -19,6 +19,7 @@ async function loadConnectorModule() {
     format: "esm",
     platform: "node",
     target: "node22",
+    packages: "external",
   });
   const module = await import(`${pathToFileURL(output).href}?${Date.now()}`);
   return { module, dispose: () => rm(temporary, { recursive: true, force: true }) };

@@ -12,7 +12,7 @@ import { build } from "esbuild";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function bundleSource(entry, name) {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), `grok-${name}-`));
+  const temporary = await mkdtemp(path.join(repoRoot, `.tmp-grok-${name}-`));
   const output = path.join(temporary, `${name}.mjs`);
   await build({
     entryPoints: [entry],
@@ -21,6 +21,7 @@ async function bundleSource(entry, name) {
     format: "esm",
     platform: "node",
     target: "node22",
+    packages: "external",
   });
   const module = await import(`${pathToFileURL(output).href}?${Date.now()}`);
   return { module, dispose: () => rm(temporary, { recursive: true, force: true }) };
