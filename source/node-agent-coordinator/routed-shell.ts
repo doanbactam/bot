@@ -246,7 +246,7 @@ export async function executeRoutedShell(args: unknown, transport?: RoutedShellT
     }
     const message = error instanceof Error ? error.message.toLowerCase() : "";
     const unreachable = error instanceof ConnectError
-      ? error.code === Code.Unavailable || error.code === Code.DeadlineExceeded
+      ? error.code === Code.Unavailable || error.code === Code.DeadlineExceeded || error.code === Code.Aborted || /econnreset|econnrefused|fetch failed|network/.test(message)
       : /fetch failed|econnrefused|enotfound|econnreset|network|abort/.test(message);
     if (unreachable) {
       return shellFailure(
