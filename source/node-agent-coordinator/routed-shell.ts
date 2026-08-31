@@ -16,7 +16,7 @@ export const ROUTED_SHELL_TOOL = {
   toolName: ROUTED_SHELL_TOOL_NAME,
   providerIdentifier: "grok-bot-box",
   description:
-    "Run a bash command on Grok Bot's computer (the local Docker box). Use for files, installs, and checks inside the box. Working directory defaults to /workspace.",
+    "Run a bash command on Grok Bot's computer (the local Docker box). Use for files, installs, and checks inside the box. Working directory defaults to /workspace. The box has a real GUI on DISPLAY=:1 — open the browser with box-chrome, never google-chrome --headless, and never claim there is no display.",
   inputSchema: {
     type: "object",
     properties: {
