@@ -18,7 +18,7 @@ const EXECUTOR_SUBAGENT_DESCRIPTION = [
   "Give each independent task its own executor — several run in parallel. Keep exactly one executor per stream of work: steer a follow-up or correction into the running one with MessageSubagent instead of dispatching a duplicate.",
   "It starts with no context: the dispatch prompt must be self-contained — the goal, the specifics, relevant conversation context, any of your memories or user preferences that matter, explicit success criteria, and what to report back.",
   "It runs in the background like any Task: you are notified when it finishes, so do not poll or await it.",
-  "It runs headless and cannot talk to the user; it reports its result back to you, and you deliver it."
+  "It cannot talk to the user mid-task; it reports its result back to you, and you deliver it."
 ].join(" ");
 
 export function createSandExecutorSubagentConfig(): {

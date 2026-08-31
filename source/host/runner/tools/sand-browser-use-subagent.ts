@@ -6,7 +6,7 @@ export const BROWSER_USE_SUBAGENT_DESCRIPTION = [
   "Prefer it over computerUse for browser-only work: page snapshots give it exact element targets, so it is faster and more reliable than pixel clicking, and it shares the box browser's persistent logins.",
   "Use computerUse instead when the task needs the desktop itself (GUI apps, file dialogs, drag interactions) or a site that defeats DOM automation.",
   "It runs in the background like any Task: you are notified when it finishes, so do not poll or await it.",
-  "It runs headless and cannot ask follow-ups, so give it a tightly-scoped, self-contained task with the specifics it needs (site, exact values), explicit success criteria, and what to report back.",
+  "It cannot ask the user follow-ups (no chat back to you mid-task), so give it a tightly-scoped, self-contained task with the specifics it needs (site, exact values), explicit success criteria, and what to report back. This is not a headless/no-GUI Chrome: it drives the box's real browser window.",
   "It cannot act as the user: if a step needs a human (a password, 2FA, a captcha, a payment) it stops and reports back, so you can hand the user the box with request_box_help and dispatch it again to continue.",
 ].join(" ");
 export const createSandBrowserUseSubagentConfig = () => ({
