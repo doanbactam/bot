@@ -10,7 +10,7 @@ import { build } from "esbuild";
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 async function loadModule() {
-  const temporary = await mkdtemp(path.join(os.tmpdir(), "grok-inference-router-transcript-"));
+  const temporary = await mkdtemp(path.join(repoRoot, ".tmp-grok-inference-router-transcript-"));
   const output = path.join(temporary, "inference-router.mjs");
   await build({
     entryPoints: [path.join(repoRoot, "source/node-agent-coordinator/inference-router.ts")],
@@ -19,6 +19,7 @@ async function loadModule() {
     format: "esm",
     platform: "node",
     target: "node22",
+    packages: "external",
   });
   const module = await import(`${pathToFileURL(output).href}?${Date.now()}`);
   return { module, dispose: () => rm(temporary, { recursive: true, force: true }) };

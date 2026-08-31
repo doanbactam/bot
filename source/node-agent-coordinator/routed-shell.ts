@@ -1,6 +1,15 @@
-const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
+import { randomInt, randomUUID } from "node:crypto";
+import { MethodKind, type ServiceType } from "@bufbuild/protobuf";
+import { Code, ConnectError, createClient } from "@connectrpc/connect";
+import { createConnectTransport } from "@connectrpc/connect-node";
+
+import { LOCAL_DOCKER_EXEC_DAEMON_DEFAULT_URL, readLocalDockerExecDaemonToken } from "../shared/local-docker-box-credentials.js";
+import { ExecService } from "../packages/proto/generated/agent/v1/exec_service_connect.js";
+import { ExecServerMessage, type ExecClientMessage } from "../packages/proto/generated/agent/v1/exec_pb.js";
+import { ShellArgs, type ShellResult, type ShellStream } from "../packages/proto/generated/agent/v1/shell_exec_pb.js";
 
 export const ROUTED_SHELL_TOOL_NAME = "Shell";
+export const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
 
 export const ROUTED_SHELL_TOOL = {
   name: ROUTED_SHELL_TOOL_NAME,
@@ -23,35 +32,43 @@ export const ROUTED_SHELL_TOOL = {
   },
 } as const;
 
-const EXEC_URL = "http://127.0.0.1:1337/agent.v1.ControlService/Exec";
 const DEFAULT_CWD = "/workspace";
 const MAX_OUTPUT = 80_000;
+const DEFAULT_TIMEOUT_MS = 120_000;
 
-function connectJsonEnvelope(payload: Uint8Array): Uint8Array {
-  const header = Buffer.alloc(5);
-  header.writeUInt32BE(payload.byteLength, 1);
-  return Buffer.concat([header, payload]);
+const RoutedExecService = {
+  typeName: ExecService.typeName,
+  methods: { exec: { ...ExecService.methods.exec, kind: MethodKind.ServerStreaming } },
+} as const satisfies ServiceType;
+
+export interface RoutedShellTransport {
+  readonly baseUrl: string;
+  readonly authToken: string;
+  readonly timeoutMs?: number;
 }
 
-function decodeConnectJsonStream(body: Uint8Array): unknown[] {
-  const messages: unknown[] = [];
-  let offset = 0;
-  while (offset + 5 <= body.byteLength) {
-    const flags = body[offset]!;
-    const length = (body[offset + 1]! << 24) | (body[offset + 2]! << 16) | (body[offset + 3]! << 8) | body[offset + 4]!;
-    offset += 5;
-    if (offset + length > body.byteLength) break;
-    const chunk = body.subarray(offset, offset + length);
-    offset += length;
-    if ((flags & 0b10) !== 0) continue; // end-stream / trailers
-    if (chunk.byteLength === 0) continue;
-    try {
-      messages.push(JSON.parse(Buffer.from(chunk).toString("utf8")));
-    } catch {
-      // ignore malformed frame
-    }
+let configuredTransport: RoutedShellTransport | undefined;
+
+export function configureRoutedShell(transport: RoutedShellTransport | undefined): void {
+  configuredTransport = transport;
+}
+
+export async function loadRoutedShellTransport(options?: {
+  readonly settingsPath?: string;
+  readonly env?: NodeJS.ProcessEnv;
+}): Promise<RoutedShellTransport> {
+  const env = options?.env ?? process.env;
+  const baseUrl = env.SAND_BOX_EXEC_DAEMON_URL?.trim() || configuredTransport?.baseUrl || LOCAL_DOCKER_EXEC_DAEMON_DEFAULT_URL;
+  const envToken = env.SAND_BOX_EXEC_DAEMON_AUTH_TOKEN?.trim();
+  if (envToken != null && envToken.length > 0) return { baseUrl, authToken: envToken };
+  if (configuredTransport != null && configuredTransport.authToken.length > 0) {
+    return { baseUrl: configuredTransport.baseUrl, authToken: configuredTransport.authToken, ...(configuredTransport.timeoutMs == null ? {} : { timeoutMs: configuredTransport.timeoutMs }) };
   }
-  return messages;
+  if (options?.settingsPath != null) {
+    const stored = await readLocalDockerExecDaemonToken(options.settingsPath);
+    if (stored != null) return { baseUrl, authToken: stored };
+  }
+  return { baseUrl, authToken: "" };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -65,81 +82,188 @@ function truncate(text: string): string {
   return `${text.slice(0, MAX_OUTPUT)}\n…[truncated]`;
 }
 
-export async function executeRoutedShell(args: unknown): Promise<Record<string, unknown>> {
+function shellFailure(stderr: string, extras?: { readonly stdout?: string; readonly workingDirectory?: string }): Record<string, unknown> {
+  return {
+    exitCode: 1,
+    stdout: truncate(extras?.stdout ?? ""),
+    stderr: truncate(stderr),
+    ...(extras?.workingDirectory == null ? {} : { workingDirectory: extras.workingDirectory }),
+    isError: true,
+  };
+}
+
+function fromCompleted(
+  exitCode: number,
+  stdout: string,
+  stderr: string,
+  workingDirectory: string,
+  isError = exitCode !== 0,
+): Record<string, unknown> {
+  return {
+    exitCode,
+    stdout: truncate(stdout),
+    stderr: truncate(stderr),
+    workingDirectory,
+    isError,
+  };
+}
+
+function describeConnectError(error: unknown): string {
+  if (error instanceof ConnectError) {
+    if (error.code === Code.Unauthenticated || error.code === Code.PermissionDenied) {
+      return "Exec daemon rejected the control token.";
+    }
+    return `Exec RPC ${error.code}: ${error.rawMessage}`;
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+function fromShellResult(result: ShellResult, fallbackCwd: string): Record<string, unknown> | undefined {
+  switch (result.result.case) {
+    case "success": {
+      const value = result.result.value;
+      return fromCompleted(value.exitCode, value.stdout, value.stderr, value.workingDirectory || fallbackCwd, value.exitCode !== 0);
+    }
+    case "failure": {
+      const value = result.result.value;
+      return fromCompleted(value.exitCode, value.stdout, value.stderr, value.workingDirectory || fallbackCwd, true);
+    }
+    case "timeout": {
+      const value = result.result.value;
+      return shellFailure(`Command timed out after ${value.timeoutMs}ms.`, { workingDirectory: value.workingDirectory || fallbackCwd });
+    }
+    case "spawnError": {
+      const value = result.result.value;
+      return shellFailure(value.error || "Shell failed to spawn.", { workingDirectory: value.workingDirectory || fallbackCwd });
+    }
+    case "rejected": {
+      const value = result.result.value;
+      return shellFailure(value.reason || "Shell command was rejected.", { workingDirectory: value.workingDirectory || fallbackCwd });
+    }
+    case "permissionDenied": {
+      const value = result.result.value;
+      return shellFailure(value.error || "Shell permission denied.", { workingDirectory: value.workingDirectory || fallbackCwd });
+    }
+    default:
+      return undefined;
+  }
+}
+
+function applyShellStreamEvent(
+  event: ShellStream["event"],
+  state: { stdout: string; stderr: string; exitCode: number | undefined; workingDirectory: string; terminalError: string | undefined },
+): void {
+  switch (event.case) {
+    case "stdout":
+      state.stdout += event.value.data;
+      break;
+    case "stderr":
+      state.stderr += event.value.data;
+      break;
+    case "exit":
+      state.exitCode = event.value.code;
+      if (event.value.cwd.length > 0) state.workingDirectory = event.value.cwd;
+      break;
+    case "rejected":
+      state.terminalError = event.value.reason || "Shell command was rejected.";
+      break;
+    case "permissionDenied":
+      state.terminalError = event.value.error || "Shell permission denied.";
+      break;
+    case "sandboxUnsupported":
+      state.terminalError = event.value.reason || "Sandbox is not supported for this command.";
+      break;
+    default:
+      break;
+  }
+}
+
+function createExecClient(transport: RoutedShellTransport) {
+  return createClient(RoutedExecService, createConnectTransport({
+    baseUrl: transport.baseUrl,
+    httpVersion: "1.1",
+    interceptors: [
+      (next) => async (request) => {
+        request.header.set("authorization", `Bearer ${transport.authToken}`);
+        return await next(request);
+      },
+    ],
+  }));
+}
+
+export async function executeRoutedShell(args: unknown, transport?: RoutedShellTransport): Promise<Record<string, unknown>> {
   const record = asRecord(args) ?? {};
   const command = typeof record.command === "string" ? record.command : "";
   if (command.trim().length === 0) {
-    return { exitCode: 1, stdout: "", stderr: "Shell requires a non-empty command.", isError: true };
+    return shellFailure("Shell requires a non-empty command.");
   }
   const cwd =
     typeof record.working_directory === "string" && record.working_directory.trim().length > 0
       ? record.working_directory.trim()
       : DEFAULT_CWD;
+  const resolved = transport ?? configuredTransport ?? await loadRoutedShellTransport();
+  if (resolved.authToken.trim().length === 0) {
+    return shellFailure("No exec daemon control token is configured.");
+  }
+  const timeoutMs = resolved.timeoutMs != null && resolved.timeoutMs > 0 ? resolved.timeoutMs : DEFAULT_TIMEOUT_MS;
+  const request = new ExecServerMessage({
+    id: randomInt(1, 0xffff_ffff),
+    execId: randomUUID(),
+    message: {
+      case: "shellArgs",
+      value: new ShellArgs({
+        command,
+        workingDirectory: cwd,
+        timeout: timeoutMs,
+      }),
+    },
+  });
 
-  const payload = Buffer.from(
-    JSON.stringify({
-      command: "bash",
-      args: ["-lc", command],
-      cwd,
-    }),
-    "utf8",
-  );
-
-  let response: Response;
+  const streamState = { stdout: "", stderr: "", workingDirectory: cwd, exitCode: undefined as number | undefined, terminalError: undefined as string | undefined };
+  let shellResult: Record<string, unknown> | undefined;
   try {
-    response = await fetch(EXEC_URL, {
-      method: "POST",
-      headers: {
-        authorization: "Bearer local",
-        "content-type": "application/connect+json",
-        "connect-protocol-version": "1",
-      },
-      body: connectJsonEnvelope(payload),
-      signal: AbortSignal.timeout(120_000),
-    });
-  } catch (error) {
-    return {
-      exitCode: 1,
-      stdout: "",
-      stderr: `Couldn't reach Grok Bot's computer exec daemon (${error instanceof Error ? error.message : String(error)}). Is the local Docker VM running (${LOCAL_DOCKER_BOX_CONTAINER})?`,
-      isError: true,
-    };
-  }
-
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (!response.ok) {
-    return {
-      exitCode: 1,
-      stdout: "",
-      stderr: `Exec HTTP ${response.status}: ${Buffer.from(bytes).toString("utf8").slice(0, 500)}`,
-      isError: true,
-    };
-  }
-
-  let stdout = "";
-  let stderr = "";
-  let exitCode = 0;
-  for (const message of decodeConnectJsonStream(bytes)) {
-    const row = asRecord(message);
-    if (row == null) continue;
-    const stdoutEvent = asRecord(row.stdoutEvent);
-    const stderrEvent = asRecord(row.stderrEvent);
-    const exitEvent = asRecord(row.exitEvent);
-    if (stdoutEvent != null && typeof stdoutEvent.data === "string") stdout += stdoutEvent.data;
-    if (stderrEvent != null && typeof stderrEvent.data === "string") stderr += stderrEvent.data;
-    if (exitEvent != null) {
-      if (typeof exitEvent.exitCode === "number") exitCode = exitEvent.exitCode;
-      else if (typeof exitEvent.code === "number") exitCode = exitEvent.code;
+    const client = createExecClient(resolved);
+    for await (const element of client.exec(request, { timeoutMs })) {
+      if (element.element.case === "execClientControlMessage") {
+        const control = element.element.value.message;
+        if (control.case === "throw") {
+          return shellFailure(control.value.error || "Exec daemon threw a control error.", { workingDirectory: cwd });
+        }
+        continue;
+      }
+      if (element.element.case !== "execClientMessage") continue;
+      const message: ExecClientMessage["message"] = element.element.value.message;
+      if (message.case === "shellResult" || message.case === "miniSweAgentBashResult") {
+        shellResult = fromShellResult(message.value, cwd);
+        continue;
+      }
+      if (message.case === "shellStream") applyShellStreamEvent(message.value.event, streamState);
     }
+  } catch (error) {
+    const detail = describeConnectError(error);
+    if (error instanceof ConnectError && (error.code === Code.Unauthenticated || error.code === Code.PermissionDenied)) {
+      return shellFailure(detail);
+    }
+    const message = error instanceof Error ? error.message.toLowerCase() : "";
+    const unreachable = error instanceof ConnectError
+      ? error.code === Code.Unavailable || error.code === Code.DeadlineExceeded || error.code === Code.Aborted || /econnreset|econnrefused|fetch failed|network/.test(message)
+      : /fetch failed|econnrefused|enotfound|econnreset|network|abort/.test(message);
+    if (unreachable) {
+      return shellFailure(
+        `Couldn't reach Grok Bot's computer exec daemon (${detail}). Is the local Docker VM running (${LOCAL_DOCKER_BOX_CONTAINER})?`,
+      );
+    }
+    return shellFailure(detail);
   }
 
-  return {
-    exitCode,
-    stdout: truncate(stdout),
-    stderr: truncate(stderr),
-    workingDirectory: cwd,
-    isError: exitCode !== 0,
-  };
+  if (shellResult != null) return shellResult;
+  if (streamState.terminalError != null) {
+    return shellFailure(streamState.terminalError, { stdout: streamState.stdout, workingDirectory: streamState.workingDirectory });
+  }
+  if (streamState.exitCode != null) {
+    return fromCompleted(streamState.exitCode, streamState.stdout, streamState.stderr, streamState.workingDirectory);
+  }
+  return shellFailure("Exec daemon returned no terminal shell result.", { workingDirectory: cwd });
 }
 
 export function isRoutedShellTool(definition: { name?: unknown; toolName?: unknown; providerIdentifier?: unknown }): boolean {

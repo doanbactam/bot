@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { chmod, mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
@@ -10,12 +10,13 @@ import type { RecreateResult } from "./box-recreate-commands.js";
 import type { SandRemoteHostConnector } from "./box-host-connector.js";
 import type { GatewayConnection } from "./gateway-descriptor-cache.js";
 import { LOCAL_DOCKER_INDEPENDENT_ACCESS_TOKEN } from "../../shared/local-docker-independent-credential.js";
+import { readOrCreateLocalDockerBoxCredentials } from "../../shared/local-docker-box-credentials.js";
 
 export const LOCAL_DOCKER_BOX_IMAGE = "public.ecr.aws/k0i0n2g5/cursorenvironments/universal:sand-box-latest";
 export const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
 export const LOCAL_DOCKER_GATEWAY_URL = "http://127.0.0.1:1340";
 export const LOCAL_DOCKER_OWNER_LABEL = "com.grok-bot.local-vm=1";
-export const LOCAL_DOCKER_SCHEMA_VERSION = "7";
+export const LOCAL_DOCKER_SCHEMA_VERSION = "8";
 const READY_TIMEOUT_MS = 180_000;
 const OPTIONAL_CREDENTIAL_TIMEOUT_MS = 3_000;
 
@@ -44,10 +45,6 @@ function runDocker(args: readonly string[]): Promise<CommandResult> {
   });
 }
 
-function credentialPath(settingsPath: string): string {
-  return join(dirname(settingsPath), "local-docker-vm.json");
-}
-
 function inferenceCredentialPath(settingsPath: string): string {
   return join(dirname(settingsPath), "local-docker-credential", "inference.json");
 }
@@ -63,16 +60,7 @@ async function persistInferenceCredential(settingsPath: string, credential: Infe
 }
 
 async function readOrCreateToken(settingsPath: string): Promise<string> {
-  const target = credentialPath(settingsPath);
-  try {
-    const parsed = JSON.parse(await readFile(target, "utf8")) as { token?: unknown };
-    if (typeof parsed.token === "string" && parsed.token.length >= 32) return parsed.token;
-  } catch {}
-  const token = randomBytes(32).toString("hex");
-  await mkdir(dirname(target), { recursive: true });
-  await writeFile(target, `${JSON.stringify({ schemaVersion: 1, token }, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-  await chmod(target, 0o600);
-  return token;
+  return (await readOrCreateLocalDockerBoxCredentials(settingsPath)).token;
 }
 
 async function gatewayReady(token: string): Promise<boolean> {
@@ -170,7 +158,7 @@ async function pullBoxImage(image: string): Promise<void> {
   if (!pulled.ok) throw new Error(`Could not download the local VM image (${image}). Check the network connection and Docker registry access.\n${pulled.output}`);
 }
 
-export function buildDockerRunArguments(args: { readonly token: string; readonly hostBundle: LocalHostBundle; readonly inferenceCredential?: InferenceCredential | undefined; readonly inferenceFile?: string | undefined; readonly authMounts: readonly string[] }): string[] {
+export function buildDockerRunArguments(args: { readonly token: string; readonly execDaemonToken: string; readonly hostBundle: LocalHostBundle; readonly inferenceCredential?: InferenceCredential | undefined; readonly inferenceFile?: string | undefined; readonly authMounts: readonly string[] }): string[] {
   return [
     "run", "--detach", "--name", LOCAL_DOCKER_BOX_CONTAINER,
     "--label", LOCAL_DOCKER_OWNER_LABEL, "--label", `com.grok-bot.local-vm.host-sha256=${args.hostBundle.sha256}`,
@@ -178,7 +166,7 @@ export function buildDockerRunArguments(args: { readonly token: string; readonly
     "--label", `com.grok-bot.local-vm.inference-credential=${args.inferenceCredential == null ? "0" : "1"}`,
     "--label", `com.grok-bot.local-vm.schema-version=${LOCAL_DOCKER_SCHEMA_VERSION}`,
     "--platform", "linux/amd64", "--restart", "unless-stopped", "--shm-size", "1g",
-    "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${args.token}`,
+    "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_BOX_EXEC_DAEMON_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${args.token}`, "--env", `SAND_BOX_EXEC_DAEMON_AUTH_TOKEN=${args.execDaemonToken}`,
     ...(args.inferenceCredential == null ? [] : ["--env", "SAND_DEV_INFERENCE_TOKEN_FILE=/run/grok-bot/inference.json", "--env", `SAND_BACKEND_URL=${args.inferenceCredential.backendUrl}`]),
     "--publish", "127.0.0.1:1337:1337", "--publish", "127.0.0.1:1339:1339", "--publish", "127.0.0.1:1340:1340",
     "--publish", "127.0.0.1:6080:6080", "--publish", "127.0.0.1:6081:6081", "--publish", "127.0.0.1:8790:8790",
@@ -192,7 +180,8 @@ export function buildDockerRunArguments(args: { readonly token: string; readonly
 }
 
 async function ensureLocalDockerBox(settingsPath: string, inferenceCredential?: InferenceCredential): Promise<GatewayConnection> {
-  const token = await readOrCreateToken(settingsPath);
+  const credentials = await readOrCreateLocalDockerBoxCredentials(settingsPath);
+  const token = credentials.token;
   const hostBundle = await stageCurrentHostBundle(settingsPath);
   const inferenceFile = inferenceCredential == null ? undefined : await persistInferenceCredential(settingsPath, inferenceCredential);
   const daemon = await runDocker(["info", "--format", "{{.ServerVersion}}"]).catch(() => ({ ok: false, output: "Docker is not installed." }));
@@ -221,6 +210,7 @@ async function ensureLocalDockerBox(settingsPath: string, inferenceCredential?: 
     const authMounts = await localAuthMountArguments();
     const created = await runDocker(buildDockerRunArguments({
       token,
+      execDaemonToken: credentials.execDaemonToken,
       hostBundle,
       inferenceCredential,
       inferenceFile,
