@@ -14,7 +14,7 @@ export function computerUseSubagentDescription(browserUseOffered: boolean): stri
     ]),
     displaySpaceSentence(),
     "It runs in the background like any Task: you are notified when it finishes, so do not poll or await it.",
-    "It runs headless and cannot ask follow-ups, so give it a tightly-scoped, self-contained task — the smallest concrete step rather than a sprawling goal — with the specifics it needs (site, account, exact values), explicit success criteria and stopping point, and what to report back; break a big GUI goal into several narrow dispatches, and if one runs long or loops, steer it with MessageSubagent or stop it with StopSubagent.",
+    "It cannot ask the user follow-ups (no chat back to you mid-task), so give it a tightly-scoped, self-contained task — the smallest concrete step rather than a sprawling goal — with the specifics it needs (site, account, exact values), explicit success criteria and stopping point, and what to report back; break a big GUI goal into several narrow dispatches, and if one runs long or loops, steer it with MessageSubagent or stop it with StopSubagent. This is not a headless/no-GUI environment: the box has a real desktop and Chrome window the subagent drives.",
     "Only one computerUse subagent can run at a time, because they share your desktop's single screen — never dispatch a second while one is still running.",
     "It cannot act as the user: if a step needs a human (entering a password, 2FA, a captcha, a payment) it stops and reports back, so you can hand the user the box with request_box_help and then dispatch it again to continue.",
   ].join(" ");
