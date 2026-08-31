@@ -39,7 +39,7 @@ test("local Docker run arguments pin the owned container contract", async () => 
   const loaded = await loadConnectorModule();
   try {
     const connector = loaded.module;
-    assert.equal(connector.LOCAL_DOCKER_SCHEMA_VERSION, "9");
+    assert.equal(connector.LOCAL_DOCKER_SCHEMA_VERSION, "10");
     assert.equal(connector.LOCAL_DOCKER_BOX_CONTAINER, "grok-bot-local-vm");
     assert.equal(connector.LOCAL_DOCKER_GATEWAY_URL, "http://127.0.0.1:1340");
 
@@ -105,6 +105,28 @@ test("local Docker run arguments attach inference credentials when issued", asyn
     assert.ok(args.includes("SAND_BOX_EXEC_DAEMON_BIND_HOST=0.0.0.0"));
     assert.ok(args.includes("127.0.0.1:1337:1337"));
     assert.ok(!args.includes("0.0.0.0:1337:1337"));
+  } finally {
+    await loaded.dispose();
+  }
+});
+
+test("independent local Docker credential omits fake Cursor backend URL", async () => {
+  const loaded = await loadConnectorModule();
+  try {
+    const connector = loaded.module;
+    const credential = connector.localDockerIndependentInferenceCredential();
+    assert.equal(credential.backendUrl, "");
+    const args = connector.buildDockerRunArguments({
+      token: "gateway-token",
+      execDaemonToken: "c".repeat(64),
+      hostBundle: fixtureHostBundle(),
+      inferenceCredential: credential,
+      inferenceFile: "/settings/local-docker-credential/inference.json",
+      authMounts: [],
+    });
+    assert.ok(args.includes("SAND_DEV_INFERENCE_TOKEN_FILE=/run/grok-bot/inference.json"));
+    assert.ok(!args.some((value) => typeof value === "string" && value.startsWith("SAND_BACKEND_URL=")));
+    assert.ok(!args.includes("http://127.0.0.1:9"));
   } finally {
     await loaded.dispose();
   }
