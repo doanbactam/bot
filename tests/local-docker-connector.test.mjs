@@ -31,6 +31,7 @@ function fixtureHostBundle() {
     sha256: "aa11",
     boxExecDaemonPath: "/settings/local-docker-runtime/aa11/box-exec-daemon/main.cjs",
     boxExecDaemonSha256: "bb22",
+    startExecDaemonPath: "/settings/local-docker-runtime/aa11/start-exec-daemon",
   };
 }
 
@@ -38,7 +39,7 @@ test("local Docker run arguments pin the owned container contract", async () => 
   const loaded = await loadConnectorModule();
   try {
     const connector = loaded.module;
-    assert.equal(connector.LOCAL_DOCKER_SCHEMA_VERSION, "8");
+    assert.equal(connector.LOCAL_DOCKER_SCHEMA_VERSION, "9");
     assert.equal(connector.LOCAL_DOCKER_BOX_CONTAINER, "grok-bot-local-vm");
     assert.equal(connector.LOCAL_DOCKER_GATEWAY_URL, "http://127.0.0.1:1340");
 
@@ -59,6 +60,9 @@ test("local Docker run arguments pin the owned container contract", async () => 
     assert.ok(args.includes("SAND_HOST_PORT=1340"));
     assert.ok(args.includes("SAND_GATEWAY_BIND_HOST=0.0.0.0"));
     assert.ok(args.includes("SAND_BOX_EXEC_DAEMON_BIND_HOST=0.0.0.0"));
+    assert.ok(args.includes("SAND_BOX_WORKSPACE_ROOT=/workspace"));
+    assert.ok(args.includes("SAND_BOX_EXEC_DAEMON_PORT=1337"));
+    assert.ok(args.includes("SAND_USE_EXISTING_BOX_EXEC_DAEMON=1"));
     assert.ok(args.includes("SAND_GATEWAY_TOKEN=gateway-token"));
     assert.ok(args.includes(`SAND_BOX_EXEC_DAEMON_AUTH_TOKEN=${execDaemonToken}`));
     assert.ok(!args.includes("SAND_BOX_EXEC_DAEMON_AUTH_TOKEN=local"));
@@ -72,6 +76,7 @@ test("local Docker run arguments pin the owned container contract", async () => 
     assert.ok(args.includes("grok-bot-local-vm-data:/home/box/sand-data"));
     assert.ok(args.includes("type=bind,src=/settings/local-docker-runtime/aa11/host-main.cjs,dst=/home/box/sand-host/host-main.cjs,readonly"));
     assert.ok(args.includes("type=bind,src=/settings/local-docker-runtime/aa11/box-exec-daemon,dst=/home/box/box-exec-daemon,readonly"));
+    assert.ok(args.includes("type=bind,src=/settings/local-docker-runtime/aa11/start-exec-daemon,dst=/usr/local/bin/start-exec-daemon,readonly"));
     assert.ok(args.includes("type=bind,src=/home/user/.codex,dst=/root/.codex,readonly"));
     assert.ok(!args.some((value) => value.includes("SAND_DEV_INFERENCE_TOKEN_FILE")), "no inference env without a credential");
     assert.ok(!args.some((value) => value.includes("/run/grok-bot")), "no credential mount without a credential");

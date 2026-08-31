@@ -16,7 +16,7 @@ export const LOCAL_DOCKER_BOX_IMAGE = "public.ecr.aws/k0i0n2g5/cursorenvironment
 export const LOCAL_DOCKER_BOX_CONTAINER = "grok-bot-local-vm";
 export const LOCAL_DOCKER_GATEWAY_URL = "http://127.0.0.1:1340";
 export const LOCAL_DOCKER_OWNER_LABEL = "com.grok-bot.local-vm=1";
-export const LOCAL_DOCKER_SCHEMA_VERSION = "8";
+export const LOCAL_DOCKER_SCHEMA_VERSION = "9";
 const READY_TIMEOUT_MS = 180_000;
 const OPTIONAL_CREDENTIAL_TIMEOUT_MS = 3_000;
 
@@ -31,7 +31,7 @@ export interface LocalDockerStatus {
 
 interface CommandResult { readonly ok: boolean; readonly output: string }
 interface InferenceCredential { readonly accessToken: string; readonly backendUrl: string; readonly expiresAtMs: number }
-interface LocalHostBundle { readonly path: string; readonly sha256: string; readonly boxExecDaemonPath: string; readonly boxExecDaemonSha256: string }
+interface LocalHostBundle { readonly path: string; readonly sha256: string; readonly boxExecDaemonPath: string; readonly boxExecDaemonSha256: string; readonly startExecDaemonPath: string }
 
 function runDocker(args: readonly string[]): Promise<CommandResult> {
   return new Promise((resolve) => {
@@ -73,9 +73,9 @@ async function gatewayReady(token: string): Promise<boolean> {
   } catch { return false; }
 }
 
-async function inspectContainer(): Promise<{ exists: boolean; running: boolean; owned: boolean; image: string; hostSha256: string; hasInferenceCredential: boolean; schemaVersion: string }> {
+async function inspectContainer(): Promise<{ exists: boolean; running: boolean; owned: boolean; image: string; hostSha256: string; boxExecDaemonSha256: string; hasInferenceCredential: boolean; schemaVersion: string }> {
   const result = await runDocker(["inspect", "--format", "{{json .}}", LOCAL_DOCKER_BOX_CONTAINER]);
-  if (!result.ok) return { exists: false, running: false, owned: false, image: "", hostSha256: "", hasInferenceCredential: false, schemaVersion: "" };
+  if (!result.ok) return { exists: false, running: false, owned: false, image: "", hostSha256: "", boxExecDaemonSha256: "", hasInferenceCredential: false, schemaVersion: "" };
   try {
     const value = JSON.parse(result.output) as { State?: { Running?: unknown }; Config?: { Image?: unknown; Labels?: Record<string, unknown> } };
     return {
@@ -84,6 +84,7 @@ async function inspectContainer(): Promise<{ exists: boolean; running: boolean; 
       owned: value.Config?.Labels?.["com.grok-bot.local-vm"] === "1",
       image: typeof value.Config?.Image === "string" ? value.Config.Image : "",
       hostSha256: typeof value.Config?.Labels?.["com.grok-bot.local-vm.host-sha256"] === "string" ? value.Config.Labels["com.grok-bot.local-vm.host-sha256"] as string : "",
+      boxExecDaemonSha256: typeof value.Config?.Labels?.["com.grok-bot.local-vm.box-exec-daemon-sha256"] === "string" ? value.Config.Labels["com.grok-bot.local-vm.box-exec-daemon-sha256"] as string : "",
       hasInferenceCredential: value.Config?.Labels?.["com.grok-bot.local-vm.inference-credential"] === "1",
       schemaVersion: typeof value.Config?.Labels?.["com.grok-bot.local-vm.schema-version"] === "string" ? value.Config.Labels["com.grok-bot.local-vm.schema-version"] as string : "",
     };
@@ -117,10 +118,18 @@ async function stageCurrentHostBundle(settingsPath: string): Promise<LocalHostBu
   };
   const hostBytes = await readRuntime("host/host-main.cjs");
   const boxExecDaemonBytes = await readRuntime("box-exec-daemon/main.cjs");
+  const startExecDaemonBytes = Buffer.from(`#!/usr/bin/env bash
+set -euo pipefail
+unset SAND_GATEWAY_TOKEN SAND_INFERENCE_RENEWAL_CREDENTIAL SAND_EGRESS_TUNNEL_BEARER || true
+export SAND_BOX_WORKSPACE_ROOT="\${SAND_BOX_WORKSPACE_ROOT:-/workspace}"
+export SAND_BOX_EXEC_DAEMON_PORT="\${SAND_BOX_EXEC_DAEMON_PORT:-1337}"
+cd /workspace
+exec /exec-daemon/node /home/box/box-exec-daemon/main.cjs
+`);
   const sha256 = createHash("sha256").update(hostBytes).digest("hex");
   const boxExecDaemonSha256 = createHash("sha256").update(boxExecDaemonBytes).digest("hex");
   const directory = join(dirname(settingsPath), "local-docker-runtime", `${sha256}-${boxExecDaemonSha256}`);
-  const persistRuntime = async (name: string, bytes: Buffer): Promise<string> => {
+  const persistRuntime = async (name: string, bytes: Buffer, mode = 0o600): Promise<string> => {
     const target = join(directory, name);
     await mkdir(dirname(target), { recursive: true });
     try {
@@ -129,17 +138,24 @@ async function stageCurrentHostBundle(settingsPath: string): Promise<LocalHostBu
     } catch (error) {
       if (error instanceof Error && !Reflect.has(error, "code")) throw error;
       const temporary = `${target}.${process.pid}.tmp`;
-      await writeFile(temporary, bytes, { mode: 0o600 });
+      await writeFile(temporary, bytes, { mode });
       await rename(temporary, target);
     }
+    await chmod(target, mode);
     return target;
   };
   await mkdir(directory, { recursive: true });
+  const startExecDaemonPath = join(directory, "start-exec-daemon");
+  const startTemporary = `${startExecDaemonPath}.${process.pid}.tmp`;
+  await writeFile(startTemporary, startExecDaemonBytes, { mode: 0o755 });
+  await rename(startTemporary, startExecDaemonPath);
+  await chmod(startExecDaemonPath, 0o755);
   return {
     path: await persistRuntime("host-main.cjs", hostBytes),
     sha256,
     boxExecDaemonPath: await persistRuntime("box-exec-daemon/main.cjs", boxExecDaemonBytes),
     boxExecDaemonSha256,
+    startExecDaemonPath,
   };
 }
 
@@ -166,13 +182,14 @@ export function buildDockerRunArguments(args: { readonly token: string; readonly
     "--label", `com.grok-bot.local-vm.inference-credential=${args.inferenceCredential == null ? "0" : "1"}`,
     "--label", `com.grok-bot.local-vm.schema-version=${LOCAL_DOCKER_SCHEMA_VERSION}`,
     "--platform", "linux/amd64", "--restart", "unless-stopped", "--shm-size", "1g",
-    "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_BOX_EXEC_DAEMON_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${args.token}`, "--env", `SAND_BOX_EXEC_DAEMON_AUTH_TOKEN=${args.execDaemonToken}`,
+    "--env", "SAND_SUPERVISOR_ENABLED=1", "--env", "SAND_BOX_AUTO_UPDATE=0", "--env", "SAND_USE_EXISTING_BOX_EXEC_DAEMON=1", "--env", "SAND_BOX_WORKSPACE_ROOT=/workspace", "--env", "SAND_BOX_EXEC_DAEMON_PORT=1337", "--env", "SAND_TREE_SITTER_NODE_DEPS=/home/box/deps", "--env", "NODE_PATH=/home/box/deps", "--env", "SAND_GATEWAY_BIND_HOST=0.0.0.0", "--env", "SAND_BOX_EXEC_DAEMON_BIND_HOST=0.0.0.0", "--env", "SAND_HOST_PORT=1340", "--env", `SAND_GATEWAY_TOKEN=${args.token}`, "--env", `SAND_BOX_EXEC_DAEMON_AUTH_TOKEN=${args.execDaemonToken}`,
     ...(args.inferenceCredential == null ? [] : ["--env", "SAND_DEV_INFERENCE_TOKEN_FILE=/run/grok-bot/inference.json", "--env", `SAND_BACKEND_URL=${args.inferenceCredential.backendUrl}`]),
     "--publish", "127.0.0.1:1337:1337", "--publish", "127.0.0.1:1339:1339", "--publish", "127.0.0.1:1340:1340",
     "--publish", "127.0.0.1:6080:6080", "--publish", "127.0.0.1:6081:6081", "--publish", "127.0.0.1:8790:8790",
     "--volume", "grok-bot-local-vm-workspace:/workspace", "--volume", "grok-bot-local-vm-data:/home/box/sand-data",
     "--mount", `type=bind,src=${args.hostBundle.path},dst=/home/box/sand-host/host-main.cjs,readonly`,
     "--mount", `type=bind,src=${dirname(args.hostBundle.boxExecDaemonPath)},dst=/home/box/box-exec-daemon,readonly`,
+    "--mount", `type=bind,src=${args.hostBundle.startExecDaemonPath},dst=/usr/local/bin/start-exec-daemon,readonly`,
     ...(args.inferenceFile == null ? [] : ["--mount", `type=bind,src=${dirname(args.inferenceFile)},dst=/run/grok-bot,readonly`]),
     ...args.authMounts,
     LOCAL_DOCKER_BOX_IMAGE,
@@ -193,6 +210,7 @@ async function ensureLocalDockerBox(settingsPath: string, inferenceCredential?: 
     ? [
       ...(inspected.schemaVersion !== LOCAL_DOCKER_SCHEMA_VERSION ? ["outdated schema"] : []),
       ...(inspected.hostSha256 !== hostBundle.sha256 ? ["updated app runtime"] : []),
+      ...(inspected.boxExecDaemonSha256 !== hostBundle.boxExecDaemonSha256 ? ["updated box exec daemon"] : []),
       ...(inferenceCredential != null && !inspected.hasInferenceCredential ? ["new inference credentials"] : []),
     ]
     : [];
@@ -278,8 +296,8 @@ export function createSettingsRoutedHostConnector(
         if (remote.recreate == null) throw new Error("Remote computer recreation is unavailable.");
         return await remote.recreate(args);
       }
-      const stopped = await runDocker(["restart", LOCAL_DOCKER_BOX_CONTAINER]);
-      if (!stopped.ok) throw new Error(`Could not restart the local Docker VM: ${stopped.output}`);
+      const removed = await runDocker(["rm", "--force", LOCAL_DOCKER_BOX_CONTAINER]);
+      if (!removed.ok && !/no such container/i.test(removed.output)) return { status: "rejected", reason: removed.output };
       await localConnect();
       return { status: "started-untrackable" };
     },
